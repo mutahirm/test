@@ -255,18 +255,39 @@
 
     // ======= COLLECTIONS =======
     async function fetchCollections() {
-      const res = await apiFetch("/collections");
+      const res = await apiFetch("/collections?limit=-1");
       if (!res.ok) {
-        show(`Collections fetch failed: ${res.status}\n${await res.text()}`);
+        show(`Collections fetch failed: ${res.status}
+${await res.text()}`);
         return [];
       }
       const payload = await res.json();
       const list = Array.isArray(payload?.data) ? payload.data : [];
-      // Exclude system collections (directus_*)
-      return list.filter(c => !(c?.collection || '').startsWith('directus_'));
+      // Exclude: system tables, hidden, folder/group containers
+      // Strategy:
+      //  1) Drop system (directus_*)
+      //  2) Drop hidden
+      //  3) Prefer entries with a backing schema
+      //  4) Drop any collection that is used as a *group container* (if other collections reference it via meta.group)
+      const containerNames = new Set(
+        list.map(x => x?.meta?.group).filter(Boolean)
+      );
+
+      return list.filter(c => {
+        const name = c?.collection || '';
+        const isSystem = name.startsWith('directus_');
+        const isHidden = c?.meta?.hidden === true;
+        const hasSchema = !!c?.schema; // real collections have a schema object
+        const isContainer = containerNames.has(name);
+        return !isSystem && !isHidden && hasSchema && !isContainer;
+      });
+        const isHidden = c?.meta?.hidden === true;
+        const hasSchema = !!c?.schema; // folder/group entries have no schema
+        return !isSystem && !isHidden && hasSchema;
+      });
     }
 
-    function renderCollections(cols) {
+    function renderCollections(cols) {(cols) {
       const wrap = $("collectionsList");
       wrap.innerHTML = "";
       $("colCount").textContent = cols.length ? `${cols.length} visible` : "No non-system collections found";
