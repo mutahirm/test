@@ -1,58 +1,152 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Directus Session Auth Demo</title>
+  <meta charset="UTF-8" />
+  <title>Directus Session Auth — Auto Refresh</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font: 14px/1.5 system-ui, sans-serif; max-width: 720px; margin: 40px auto; }
+    form, .row { margin: 12px 0; }
+    input { padding: 8px; margin-right: 6px; }
+    button { padding: 8px 12px; }
+    pre { background: #111; color: #eee; padding: 12px; border-radius: 8px; overflow: auto; }
+    .hidden { display: none; }
+  </style>
 </head>
 <body>
-  <h1>Login + Fetch from "test" Collection</h1>
+  <h1>Directus Login + Auto-Refresh Demo</h1>
 
-  <form id="loginForm">
-    <input type="email" id="email" placeholder="Email" required />
-    <input type="password" id="password" placeholder="Password" required />
+  <div id="status">Initializing…</div>
+
+  <form id="loginForm" class="hidden">
+    <input type="email" id="email" placeholder="Email" autocomplete="username" required />
+    <input type="password" id="password" placeholder="Password" autocomplete="current-password" required />
     <button type="submit">Login</button>
   </form>
 
-  <button id="loadData" disabled>Load Test Collection</button>
+  <div class="row">
+    <button id="loadData" disabled>Load “test” Collection</button>
+    <button id="whoami" disabled>Who am I?</button>
+    <button id="logout" disabled>Logout</button>
+  </div>
+
   <pre id="output"></pre>
 
   <script>
-    const directusUrl = "https://test.mutahirmasood.com/api"; 
+    const API = "https://test.mutahirmasood.com/api"; // same-origin mount of Directus
 
-    // handle login
-    document.getElementById("loginForm").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const email = document.getElementById("email").value;
-      const password = document.getElementById("password").value;
-
-      const res = await fetch(`${directusUrl}/auth/login`, {
+    // Helper: POST /auth/refresh (session mode)
+    async function refreshSession() {
+      const r = await fetch(`${API}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",  // crucial for cookie-based session
+        credentials: "include",
+        body: JSON.stringify({ mode: "session" })
+      });
+      return r.ok;
+    }
+
+    // Helper: generic fetch that auto-refreshes once on 401
+    async function apiFetch(path, init = {}, { retryOn401 = true } = {}) {
+      const res = await fetch(`${API}${path}`, { credentials: "include", ...init });
+      if (res.status === 401 && retryOn401) {
+        const ok = await refreshSession();
+        if (ok) {
+          return fetch(`${API}${path}`, { credentials: "include", ...init, });
+        }
+      }
+      return res;
+    }
+
+    // UI helpers
+    const $ = (id) => document.getElementById(id);
+    function setAuthedUI(enabled, meInfo = "") {
+      $("loadData").disabled = !enabled;
+      $("whoami").disabled  = !enabled;
+      $("logout").disabled  = !enabled;
+      $("loginForm").classList.toggle("hidden", enabled);
+      $("status").textContent = enabled ? `Signed in${meInfo ? " — " + meInfo : ""}` : "Please log in.";
+    }
+    function show(obj) { $("output").textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2); }
+
+    // On load: silently refresh, then /users/me
+    (async () => {
+      try {
+        await refreshSession(); // ok if it fails; we'll check /users/me next
+        const meRes = await apiFetch("/users/me", { method: "GET" }, { retryOn401: false });
+        if (meRes.ok) {
+          const me = await meRes.json();
+          setAuthedUI(true, me?.data?.email || "");
+        } else {
+          setAuthedUI(false);
+        }
+      } catch (e) {
+        setAuthedUI(false);
+        show(String(e));
+      }
+    })();
+
+    // Login handler
+    $("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      show("Logging in…");
+      const email = $("email").value.trim();
+      const password = $("password").value;
+
+      const res = await fetch(`${API}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ email, password, mode: "session" })
       });
 
-      if (res.ok) {
-        document.getElementById("output").textContent = "Login successful!";
-        document.getElementById("loadData").disabled = false;
-      } else {
+      if (!res.ok) {
         const err = await res.text();
-        document.getElementById("output").textContent = `Login failed: ${res.status}\n${err}`;
+        show(`Login failed: ${res.status}\n${err}`);
+        return;
+      }
+
+      // After login, fetch /users/me to confirm
+      const meRes = await apiFetch("/users/me");
+      if (meRes.ok) {
+        const me = await meRes.json();
+        setAuthedUI(true, me?.data?.email || "");
+        show("Login successful.");
+      } else {
+        setAuthedUI(false);
+        show(`Login returned but /users/me failed: ${meRes.status}`);
       }
     });
 
-    // fetch data from "test" collection
-    document.getElementById("loadData").addEventListener("click", async () => {
-      const res = await fetch(`${directusUrl}/items/test`, {
-        credentials: "include"
+    // Load collection "test"
+    $("loadData").addEventListener("click", async () => {
+      show("Loading collection…");
+      const res = await apiFetch("/items/test");
+      if (!res.ok) return show(`Fetch failed: ${res.status}\n${await res.text()}`);
+      show(await res.json());
+    });
+
+    // Who am I?
+    $("whoami").addEventListener("click", async () => {
+      const res = await apiFetch("/users/me");
+      if (!res.ok) return show(`WhoAmI failed: ${res.status}\n${await res.text()}`);
+      show(await res.json());
+    });
+
+    // Logout
+    $("logout").addEventListener("click", async () => {
+      const res = await fetch(`${API}/auth/logout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ mode: "session" })
       });
-      if (!res.ok) {
-        const err = await res.text();
-        document.getElementById("output").textContent = `Fetch failed: ${res.status}\n${err}`;
-        return;
+      if (res.ok) {
+        setAuthedUI(false);
+        show("Logged out.");
+      } else {
+        show(`Logout failed: ${res.status}\n${await res.text()}`);
       }
-      const data = await res.json();
-      document.getElementById("output").textContent = JSON.stringify(data, null, 2);
     });
   </script>
 </body>
