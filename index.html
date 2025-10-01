@@ -1,8 +1,10 @@
-<!DOCTYPE html>
+show all collections i have (except system) then let me click one of them and see the data inside
+
+<!DOCTYPE html> 
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Directus Portal Demo — Session Timer + Collections</title>
+  <title>Directus Portal Demo — Session Timer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- Tailwind CDN -->
@@ -36,11 +38,10 @@
     .glass { background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); backdrop-filter: blur(10px) saturate(120%); }
     .btn:disabled { opacity:.5; cursor:not-allowed; }
     .tick { transition: color .2s ease, background-color .2s ease, border-color .2s ease; }
-    .kbd { font-variant-numeric: tabular-nums; }
   </style>
 </head>
 <body class="min-h-screen bg-base-bg text-base-text">
-  <div class="max-w-5xl mx-auto px-4 py-10">
+  <div class="max-w-3xl mx-auto px-4 py-10">
     <!-- Header -->
     <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <h1 class="text-2xl md:text-3xl font-semibold tracking-tight">Directus Portal</h1>
@@ -95,26 +96,16 @@
                     class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-3 text-base-sub hover:text-base-text transition">
               Refresh Session
             </button>
-            <span id="hint" class="text-xs text-base-sub hidden">Logged in — collections will load below.</span>
+            <span id="hint" class="text-xs text-base-sub hidden">Logged in — try loading data.</span>
           </div>
         </form>
 
         <!-- Actions (authed) -->
-        <div id="actions" class="hidden mt-2 space-y-4">
+        <div id="actions" class="hidden mt-2">
           <div class="flex flex-wrap gap-3">
             <button id="whoami" class="btn rounded-xl bg-base-brand/20 hover:bg-base-brand/30 text-base-text px-4 py-2 transition">Who am I?</button>
             <button id="loadData" class="btn rounded-xl bg-base-brand2/20 hover:bg-base-brand2/30 text-base-text px-4 py-2 transition">Load “test” Collection</button>
-            <button id="reloadCollections" class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-2 text-base-sub hover:text-base-text transition">Reload Collections</button>
             <button id="clearOut" class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-2 text-base-sub hover:text-base-text transition">Clear</button>
-          </div>
-
-          <!-- Collections Browser -->
-          <div>
-            <div class="flex items-center justify-between mb-2">
-              <h3 class="text-base font-semibold">Collections</h3>
-              <span id="colCount" class="text-xs text-base-sub"></span>
-            </div>
-            <div id="collectionsList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
           </div>
         </div>
 
@@ -253,65 +244,7 @@
       return r.ok ? r.json() : null;
     }
 
-    // ======= COLLECTIONS =======
-    async function fetchCollections() {
-      const res = await apiFetch("/collections?limit=-1");
-      if (!res.ok) {
-        show(`Collections fetch failed: ${res.status}
-${await res.text()}`);
-        return [];
-      }
-      const payload = await res.json();
-      const list = Array.isArray(payload?.data) ? payload.data : [];
-      // Exclude: system tables, hidden, and folder/group nodes (those without a backing schema)
-      return list.filter(c => {
-        const name = c?.collection || '';
-        const isSystem = name.startsWith('directus_');
-        const isHidden = c?.meta?.hidden === true;
-        const hasSchema = !!c?.schema; // folder/group entries have no schema
-        return !isSystem && !isHidden && hasSchema;
-      });
-    }
-
-    function renderCollections(cols) {(cols) {
-      const wrap = $("collectionsList");
-      wrap.innerHTML = "";
-      $("colCount").textContent = cols.length ? `${cols.length} visible` : "No non-system collections found";
-
-      cols.forEach(c => {
-        const btn = document.createElement("button");
-        btn.className = "group text-left rounded-xl border border-base-line bg-base-card/60 hover:bg-base-line/40 transition p-4 w-full";
-        btn.innerHTML = `
-          <div class="flex items-center justify-between">
-            <div>
-              <div class="font-medium">${c.collection}</div>
-              <div class="text-xs text-base-sub mt-0.5">${c?.meta?.note || c?.meta?.display_template || ''}</div>
-            </div>
-            <svg class="w-5 h-5 opacity-70 group-hover:opacity-100" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </div>`;
-        btn.addEventListener('click', () => loadCollectionItems(c.collection));
-        wrap.appendChild(btn);
-      });
-    }
-
-    async function ensureCollections() {
-      show("Loading collections…");
-      const cols = await fetchCollections();
-      renderCollections(cols);
-      show("Ready. Click a collection to view items.");
-    }
-
-    async function loadCollectionItems(name) {
-      show(`Loading \"${name}\" items…`);
-      // You can add query params here (limit, fields, filter) if needed
-      const res = await apiFetch(`/items/${encodeURIComponent(name)}`);
-      if (!res.ok) return show(`Fetch failed: ${res.status}\n${await res.text()}`);
-      const payload = await res.json();
-      show(payload);
-      toast(`Loaded ${name}`);
-    }
-
-    // ======= INIT: refresh → me → start timer → load collections =======
+    // ======= INIT: refresh → me → start timer =======
     (async () => {
       try {
         await refreshSession();            // quietly renew if possible
@@ -319,7 +252,6 @@ ${await res.text()}`);
         if (me?.data) {
           setAuthedUI(true, me.data.email || "");
           await syncExpiryFromServer();    // kick off countdown
-          await ensureCollections();       // load collections once authenticated
         } else {
           setAuthedUI(false);
         }
@@ -360,7 +292,6 @@ ${await res.text()}`);
         setAuthedUI(true, me?.data?.email || "");
         show("Login successful.");
         await syncExpiryFromServer(); // start timer after login
-        await ensureCollections();    // load collections after login
       } else {
         setAuthedUI(false);
         show(`Login returned but /users/me failed: ${meRes.status}`);
@@ -396,9 +327,6 @@ ${await res.text()}`);
       show(await res.json());
     });
 
-    // Reload collections
-    $("reloadCollections").addEventListener("click", ensureCollections);
-
     // Clear output
     $("clearOut").addEventListener("click", () => show(""));
 
@@ -412,8 +340,6 @@ ${await res.text()}`);
       });
       if (res.ok) {
         setAuthedUI(false);
-        $("collectionsList").innerHTML = "";
-        $("colCount").textContent = "";
         show("Logged out.");
       } else {
         show(`Logout failed: ${res.status}\n${await res.text()}`);
