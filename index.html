@@ -2,40 +2,152 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Directus Session Auth — Auto Refresh</title>
+  <title>Directus Portal Demo</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['ui-sans-serif','system-ui','-apple-system','Segoe UI','Roboto','Inter','Ubuntu','Cantarell','Noto Sans','Helvetica Neue','Arial','Apple Color Emoji','Segoe UI Emoji'] },
+          colors: {
+            base: {
+              bg: '#0B0F17',
+              card: '#111827',
+              line: '#1F2937',
+              text: '#E5E7EB',
+              sub: '#9CA3AF',
+              brand: '#60A5FA',
+              brand2: '#34D399',
+              danger: '#F87171'
+            }
+          },
+          boxShadow: {
+            soft: '0 6px 30px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.03)'
+          }
+        }
+      }
+    }
+  </script>
   <style>
-    body { font: 14px/1.5 system-ui, sans-serif; max-width: 720px; margin: 40px auto; }
-    form, .row { margin: 12px 0; }
-    input { padding: 8px; margin-right: 6px; }
-    button { padding: 8px 12px; }
-    pre { background: #111; color: #eee; padding: 12px; border-radius: 8px; overflow: auto; }
-    .hidden { display: none; }
+    .glass { background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); backdrop-filter: blur(10px) saturate(120%); }
+    .btn:disabled { opacity:.5; cursor:not-allowed; }
+    .scroll-smooth { scroll-behavior: smooth; }
   </style>
 </head>
-<body>
-  <h1>Directus Login + Auto-Refresh Demo</h1>
+<body class="min-h-screen bg-base-bg text-base-text scroll-smooth">
+  <div class="max-w-3xl mx-auto px-4 py-10">
+    <!-- Header -->
+    <header class="flex items-center justify-between">
+      <h1 class="text-2xl md:text-3xl font-semibold tracking-tight">Directus Portal</h1>
+      <div class="flex items-center gap-3">
+        <span id="status" class="text-base-sub text-sm">Initializing…</span>
+        <button id="logout" class="btn hidden rounded-xl px-4 py-2 bg-base-line/50 hover:bg-base-line text-base-sub hover:text-base-text transition">
+          Logout
+        </button>
+      </div>
+    </header>
 
-  <div id="status">Initializing…</div>
+    <!-- Card -->
+    <section class="mt-8 glass rounded-2xl shadow-soft border border-base-line">
+      <div class="p-6 md:p-8">
+        <!-- Login Form -->
+        <form id="loginForm" class="space-y-4">
+          <div class="flex items-center gap-3 text-base-sub">
+            <div class="w-10 h-10 rounded-xl bg-base-line/50 flex items-center justify-center">
+              <!-- lock icon -->
+              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none">
+                <path d="M7 10V8a5 5 0 1 1 10 0v2" stroke="currentColor" stroke-width="1.5"/>
+                <rect x="4" y="10" width="16" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                <circle cx="12" cy="15" r="1.5" fill="currentColor"/>
+              </svg>
+            </div>
+            <div>
+              <h2 class="text-lg font-medium text-base-text">Sign in</h2>
+              <p class="text-xs">Session cookie mode — no tokens in localStorage.</p>
+            </div>
+          </div>
 
-  <form id="loginForm" class="hidden">
-    <input type="email" id="email" placeholder="Email" autocomplete="username" required />
-    <input type="password" id="password" placeholder="Password" autocomplete="current-password" required />
-    <button type="submit">Login</button>
-  </form>
+          <div class="grid md:grid-cols-2 gap-3">
+            <input id="email" type="email" autocomplete="username" placeholder="Email"
+                   class="w-full rounded-xl bg-base-card/60 border border-base-line px-4 py-3 focus:outline-none focus:ring-2 focus:ring-base-brand/60"
+                   required />
+            <input id="password" type="password" autocomplete="current-password" placeholder="Password"
+                   class="w-full rounded-xl bg-base-card/60 border border-base-line px-4 py-3 focus:outline-none focus:ring-2 focus:ring-base-brand/60"
+                   required />
+          </div>
 
-  <div class="row">
-    <button id="loadData" disabled>Load “test” Collection</button>
-    <button id="whoami" disabled>Who am I?</button>
-    <button id="logout" disabled>Logout</button>
+          <div class="flex items-center gap-3">
+            <button id="loginBtn" type="submit"
+                    class="btn rounded-xl bg-base-brand hover:bg-blue-400 text-black font-medium px-5 py-3 transition">
+              Login
+            </button>
+            <button id="refreshBtn" type="button"
+                    class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-3 text-base-sub hover:text-base-text transition">
+              Refresh Session
+            </button>
+            <span id="hint" class="text-xs text-base-sub hidden">Logged in — try loading data.</span>
+          </div>
+        </form>
+
+        <!-- Actions (authed) -->
+        <div id="actions" class="hidden">
+          <div class="flex flex-wrap gap-3">
+            <button id="whoami" class="btn rounded-xl bg-base-brand/20 hover:bg-base-brand/30 text-base-text px-4 py-2 transition">Who am I?</button>
+            <button id="loadData" class="btn rounded-xl bg-base-brand2/20 hover:bg-base-brand2/30 text-base-text px-4 py-2 transition">Load “test” Collection</button>
+            <button id="clearOut" class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-2 text-base-sub hover:text-base-text transition">Clear</button>
+          </div>
+        </div>
+
+        <!-- Output -->
+        <div class="mt-6">
+          <pre id="output" class="rounded-xl bg-black/60 border border-base-line p-4 overflow-auto text-sm leading-relaxed"></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tiny toast -->
+    <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 hidden">
+      <div class="rounded-xl bg-white/10 text-base-text px-4 py-2 border border-base-line shadow-soft">
+        <span id="toastMsg" class="text-sm"></span>
+      </div>
+    </div>
   </div>
 
-  <pre id="output"></pre>
-
   <script>
+    // ======= CONFIG =======
     const API = "https://test.mutahirmasood.com/api"; // same-origin mount of Directus
 
-    // Helper: POST /auth/refresh (session mode)
+    // ======= UTIL / UI =======
+    const $ = (id) => document.getElementById(id);
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    function toast(msg) {
+      $("toastMsg").textContent = msg;
+      $("toast").classList.remove("hidden");
+      setTimeout(() => $("toast").classList.add("hidden"), 2200);
+    }
+    function show(o) {
+      $("output").textContent = typeof o === "string" ? o : JSON.stringify(o, null, 2);
+    }
+    function setAuthedUI(isAuthed, meEmail = "") {
+      if (isAuthed) {
+        $("status").textContent = meEmail ? `Signed in — ${meEmail}` : "Signed in";
+        $("loginForm").classList.add("hidden");
+        $("actions").classList.remove("hidden");
+        $("logout").classList.remove("hidden");
+        $("hint").classList.remove("hidden");
+      } else {
+        $("status").textContent = "Please log in.";
+        $("loginForm").classList.remove("hidden");
+        $("actions").classList.add("hidden");
+        $("logout").classList.add("hidden");
+        $("hint").classList.add("hidden");
+      }
+    }
+
+    // ======= AUTH HELPERS =======
     async function refreshSession() {
       const r = await fetch(`${API}/auth/refresh`, {
         method: "POST",
@@ -46,37 +158,29 @@
       return r.ok;
     }
 
-    // Helper: generic fetch that auto-refreshes once on 401
+    // Generic fetch with one-time auto refresh on 401
     async function apiFetch(path, init = {}, { retryOn401 = true } = {}) {
       const res = await fetch(`${API}${path}`, { credentials: "include", ...init });
       if (res.status === 401 && retryOn401) {
         const ok = await refreshSession();
-        if (ok) {
-          return fetch(`${API}${path}`, { credentials: "include", ...init, });
-        }
+        if (ok) return fetch(`${API}${path}`, { credentials: "include", ...init, });
       }
       return res;
     }
 
-    // UI helpers
-    const $ = (id) => document.getElementById(id);
-    function setAuthedUI(enabled, meInfo = "") {
-      $("loadData").disabled = !enabled;
-      $("whoami").disabled  = !enabled;
-      $("logout").disabled  = !enabled;
-      $("loginForm").classList.toggle("hidden", enabled);
-      $("status").textContent = enabled ? `Signed in${meInfo ? " — " + meInfo : ""}` : "Please log in.";
+    async function fetchMe() {
+      const r = await apiFetch("/users/me", { method: "GET" }, { retryOn401: false });
+      return r.ok ? r.json() : null;
     }
-    function show(obj) { $("output").textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2); }
 
-    // On load: silently refresh, then /users/me
+    // ======= INIT: silent refresh then me =======
     (async () => {
       try {
-        await refreshSession(); // ok if it fails; we'll check /users/me next
-        const meRes = await apiFetch("/users/me", { method: "GET" }, { retryOn401: false });
-        if (meRes.ok) {
-          const me = await meRes.json();
-          setAuthedUI(true, me?.data?.email || "");
+        await refreshSession(); // ok to fail silently
+        const me = await fetchMe();
+        if (me?.data) {
+          setAuthedUI(true, me.data.email || "");
+          toast("Session restored");
         } else {
           setAuthedUI(false);
         }
@@ -86,10 +190,13 @@
       }
     })();
 
-    // Login handler
+    // ======= EVENTS =======
+    // Login
     $("loginForm").addEventListener("submit", async (e) => {
       e.preventDefault();
+      $("loginBtn").disabled = true;
       show("Logging in…");
+
       const email = $("email").value.trim();
       const password = $("password").value;
 
@@ -100,22 +207,49 @@
         body: JSON.stringify({ email, password, mode: "session" })
       });
 
+      $("loginBtn").disabled = false;
+
       if (!res.ok) {
         const err = await res.text();
         show(`Login failed: ${res.status}\n${err}`);
+        toast("Login failed");
         return;
       }
 
-      // After login, fetch /users/me to confirm
       const meRes = await apiFetch("/users/me");
       if (meRes.ok) {
         const me = await meRes.json();
         setAuthedUI(true, me?.data?.email || "");
         show("Login successful.");
+        toast("Logged in");
       } else {
         setAuthedUI(false);
         show(`Login returned but /users/me failed: ${meRes.status}`);
       }
+    });
+
+    // Manual refresh (button)
+    $("refreshBtn").addEventListener("click", async () => {
+      show("Refreshing session…");
+      const ok = await refreshSession();
+      if (ok) {
+        const me = await fetchMe();
+        if (me?.data) {
+          setAuthedUI(true, me.data.email || "");
+          show("Session refreshed.");
+          toast("Refreshed");
+        }
+      } else {
+        show("No active session to refresh.");
+        toast("Refresh failed");
+      }
+    });
+
+    // Who am I
+    $("whoami").addEventListener("click", async () => {
+      const res = await apiFetch("/users/me");
+      if (!res.ok) return show(`WhoAmI failed: ${res.status}\n${await res.text()}`);
+      show(await res.json());
     });
 
     // Load collection "test"
@@ -124,14 +258,11 @@
       const res = await apiFetch("/items/test");
       if (!res.ok) return show(`Fetch failed: ${res.status}\n${await res.text()}`);
       show(await res.json());
+      toast("Loaded ‘test’");
     });
 
-    // Who am I?
-    $("whoami").addEventListener("click", async () => {
-      const res = await apiFetch("/users/me");
-      if (!res.ok) return show(`WhoAmI failed: ${res.status}\n${await res.text()}`);
-      show(await res.json());
-    });
+    // Clear output
+    $("clearOut").addEventListener("click", () => show(""));
 
     // Logout
     $("logout").addEventListener("click", async () => {
@@ -144,6 +275,9 @@
       if (res.ok) {
         setAuthedUI(false);
         show("Logged out.");
+        toast("Logged out");
+        // tiny pause so UI updates cleanly
+        await sleep(200);
       } else {
         show(`Logout failed: ${res.status}\n${await res.text()}`);
       }
