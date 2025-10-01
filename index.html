@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Directus Portal Demo</title>
+  <title>Directus Portal Demo — Session Aware</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- Tailwind CDN -->
@@ -11,7 +11,7 @@
     tailwind.config = {
       theme: {
         extend: {
-          fontFamily: { sans: ['ui-sans-serif','system-ui','-apple-system','Segoe UI','Roboto','Inter','Ubuntu','Cantarell','Noto Sans','Helvetica Neue','Arial','Apple Color Emoji','Segoe UI Emoji'] },
+          fontFamily: { sans: ['ui-sans-serif','system-ui','Inter','Segoe UI','Roboto','Arial'] },
           colors: {
             base: {
               bg: '#0B0F17',
@@ -21,6 +21,7 @@
               sub: '#9CA3AF',
               brand: '#60A5FA',
               brand2: '#34D399',
+              warn: '#FBBF24',
               danger: '#F87171'
             }
           },
@@ -34,16 +35,20 @@
   <style>
     .glass { background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); backdrop-filter: blur(10px) saturate(120%); }
     .btn:disabled { opacity:.5; cursor:not-allowed; }
-    .scroll-smooth { scroll-behavior: smooth; }
+    .tick { transition: color .2s ease, background-color .2s ease, border-color .2s ease; }
   </style>
 </head>
-<body class="min-h-screen bg-base-bg text-base-text scroll-smooth">
+<body class="min-h-screen bg-base-bg text-base-text">
   <div class="max-w-3xl mx-auto px-4 py-10">
     <!-- Header -->
-    <header class="flex items-center justify-between">
+    <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <h1 class="text-2xl md:text-3xl font-semibold tracking-tight">Directus Portal</h1>
+
+      <!-- Session indicator -->
       <div class="flex items-center gap-3">
-        <span id="status" class="text-base-sub text-sm">Initializing…</span>
+        <div id="sessionPill" class="tick rounded-full border px-3 py-1.5 text-sm border-base-line text-base-sub">
+          <span class="opacity-70">Session:</span> <span id="sessionTime">—</span>
+        </div>
         <button id="logout" class="btn hidden rounded-xl px-4 py-2 bg-base-line/50 hover:bg-base-line text-base-sub hover:text-base-text transition">
           Logout
         </button>
@@ -53,6 +58,9 @@
     <!-- Card -->
     <section class="mt-8 glass rounded-2xl shadow-soft border border-base-line">
       <div class="p-6 md:p-8">
+        <!-- Status -->
+        <div id="status" class="text-sm text-base-sub mb-4">Initializing…</div>
+
         <!-- Login Form -->
         <form id="loginForm" class="space-y-4">
           <div class="flex items-center gap-3 text-base-sub">
@@ -66,17 +74,15 @@
             </div>
             <div>
               <h2 class="text-lg font-medium text-base-text">Sign in</h2>
-              <p class="text-xs">Session cookie mode — no tokens in localStorage.</p>
+              <p class="text-xs">Session cookie mode — secure, no tokens in localStorage.</p>
             </div>
           </div>
 
           <div class="grid md:grid-cols-2 gap-3">
             <input id="email" type="email" autocomplete="username" placeholder="Email"
-                   class="w-full rounded-xl bg-base-card/60 border border-base-line px-4 py-3 focus:outline-none focus:ring-2 focus:ring-base-brand/60"
-                   required />
+                   class="w-full rounded-xl bg-base-card/60 border border-base-line px-4 py-3 focus:outline-none focus:ring-2 focus:ring-base-brand/60" required />
             <input id="password" type="password" autocomplete="current-password" placeholder="Password"
-                   class="w-full rounded-xl bg-base-card/60 border border-base-line px-4 py-3 focus:outline-none focus:ring-2 focus:ring-base-brand/60"
-                   required />
+                   class="w-full rounded-xl bg-base-card/60 border border-base-line px-4 py-3 focus:outline-none focus:ring-2 focus:ring-base-brand/60" required />
           </div>
 
           <div class="flex items-center gap-3">
@@ -93,7 +99,7 @@
         </form>
 
         <!-- Actions (authed) -->
-        <div id="actions" class="hidden">
+        <div id="actions" class="hidden mt-2">
           <div class="flex flex-wrap gap-3">
             <button id="whoami" class="btn rounded-xl bg-base-brand/20 hover:bg-base-brand/30 text-base-text px-4 py-2 transition">Who am I?</button>
             <button id="loadData" class="btn rounded-xl bg-base-brand2/20 hover:bg-base-brand2/30 text-base-text px-4 py-2 transition">Load “test” Collection</button>
@@ -108,7 +114,7 @@
       </div>
     </section>
 
-    <!-- Tiny toast -->
+    <!-- Toast -->
     <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 hidden">
       <div class="rounded-xl bg-white/10 text-base-text px-4 py-2 border border-base-line shadow-soft">
         <span id="toastMsg" class="text-sm"></span>
@@ -118,19 +124,12 @@
 
   <script>
     // ======= CONFIG =======
-    const API = "https://test.mutahirmasood.com/api"; // same-origin mount of Directus
+    const API = "https://test.mutahirmasood.com/api"; // same-origin Directus mount
 
-    // ======= UTIL / UI =======
+    // ======= UI UTILS =======
     const $ = (id) => document.getElementById(id);
-    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-    function toast(msg) {
-      $("toastMsg").textContent = msg;
-      $("toast").classList.remove("hidden");
-      setTimeout(() => $("toast").classList.add("hidden"), 2200);
-    }
-    function show(o) {
-      $("output").textContent = typeof o === "string" ? o : JSON.stringify(o, null, 2);
-    }
+    function toast(msg) { $("toastMsg").textContent = msg; $("toast").classList.remove("hidden"); setTimeout(()=>$("toast").classList.add("hidden"), 2200); }
+    function show(o) { $("output").textContent = typeof o === "string" ? o : JSON.stringify(o, null, 2); }
     function setAuthedUI(isAuthed, meEmail = "") {
       if (isAuthed) {
         $("status").textContent = meEmail ? `Signed in — ${meEmail}` : "Signed in";
@@ -144,7 +143,76 @@
         $("actions").classList.add("hidden");
         $("logout").classList.add("hidden");
         $("hint").classList.add("hidden");
+        setSessionExpiry(null);
       }
+    }
+
+    // ======= SESSION TIMER =======
+    let expiryTs = null;      // epoch ms for access token expiry
+    let tickHandle = null;
+
+    function setSessionExpiry(isoOrNull) {
+      if (!isoOrNull) {
+        expiryTs = null;
+        $("sessionTime").textContent = "—";
+        $("sessionPill").className = "tick rounded-full border px-3 py-1.5 text-sm border-base-line text-base-sub";
+        if (tickHandle) { clearInterval(tickHandle); tickHandle = null; }
+        return;
+      }
+      // Parse ISO string into ms
+      expiryTs = Date.parse(isoOrNull);
+      if (tickHandle) clearInterval(tickHandle);
+      tickHandle = setInterval(updateCountdown, 1000);
+      updateCountdown();
+    }
+
+    function updateCountdown() {
+      if (!expiryTs) return;
+      const now = Date.now();
+      let diff = Math.max(0, Math.floor((expiryTs - now) / 1000)); // seconds
+
+      const mm = String(Math.floor(diff / 60)).padStart(2, "0");
+      const ss = String(diff % 60).padStart(2, "0");
+      $("sessionTime").textContent = `${mm}:${ss}`;
+
+      // Color states
+      const pill = $("sessionPill");
+      pill.className = "tick rounded-full border px-3 py-1.5 text-sm";
+      if (diff <= 60) {
+        pill.classList.add("border-base-line","bg-red-500/10","text-base-text");
+      } else if (diff <= 5 * 60) {
+        pill.classList.add("border-base-line","bg-base-warn/10","text-base-text");
+      } else {
+        pill.classList.add("border-base-line","text-base-sub");
+      }
+    }
+
+    // Ask Directus for the access token expiry (without storing the token):
+    // We call /auth/refresh with mode:"json" to get { data: { access_token, expires } }.
+    // Then we immediately ensure cookies are fresh with mode:"session".
+    async function syncExpiryFromServer() {
+      // 1) Get expiry
+      const r = await fetch(`${API}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ mode: "json" })
+      });
+      if (!r.ok) return false;
+      const payload = await r.json();
+      const iso = payload?.data?.expires; // ISO timestamp
+      if (!iso) return false;
+
+      // 2) Reaffirm cookies to match the fresh token timing
+      await fetch(`${API}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ mode: "session" })
+      });
+
+      setSessionExpiry(iso);
+      return true;
     }
 
     // ======= AUTH HELPERS =======
@@ -160,10 +228,13 @@
 
     // Generic fetch with one-time auto refresh on 401
     async function apiFetch(path, init = {}, { retryOn401 = true } = {}) {
-      const res = await fetch(`${API}${path}`, { credentials: "include", ...init });
+      let res = await fetch(`${API}${path}`, { credentials: "include", ...init });
       if (res.status === 401 && retryOn401) {
         const ok = await refreshSession();
-        if (ok) return fetch(`${API}${path}`, { credentials: "include", ...init, });
+        if (ok) {
+          await syncExpiryFromServer();
+          res = await fetch(`${API}${path}`, { credentials: "include", ...init });
+        }
       }
       return res;
     }
@@ -173,14 +244,14 @@
       return r.ok ? r.json() : null;
     }
 
-    // ======= INIT: silent refresh then me =======
+    // ======= INIT: refresh → me → expiry =======
     (async () => {
       try {
-        await refreshSession(); // ok to fail silently
-        const me = await fetchMe();
+        await refreshSession();            // try to renew quietly
+        const me = await fetchMe();        // see if we're signed in
         if (me?.data) {
           setAuthedUI(true, me.data.email || "");
-          toast("Session restored");
+          await syncExpiryFromServer();    // start the countdown
         } else {
           setAuthedUI(false);
         }
@@ -212,7 +283,6 @@
       if (!res.ok) {
         const err = await res.text();
         show(`Login failed: ${res.status}\n${err}`);
-        toast("Login failed");
         return;
       }
 
@@ -221,27 +291,24 @@
         const me = await meRes.json();
         setAuthedUI(true, me?.data?.email || "");
         show("Login successful.");
-        toast("Logged in");
+        await syncExpiryFromServer(); // kick off timer
       } else {
         setAuthedUI(false);
         show(`Login returned but /users/me failed: ${meRes.status}`);
       }
     });
 
-    // Manual refresh (button)
+    // Manual refresh
     $("refreshBtn").addEventListener("click", async () => {
       show("Refreshing session…");
       const ok = await refreshSession();
       if (ok) {
+        await syncExpiryFromServer();
         const me = await fetchMe();
-        if (me?.data) {
-          setAuthedUI(true, me.data.email || "");
-          show("Session refreshed.");
-          toast("Refreshed");
-        }
+        if (me?.data) setAuthedUI(true, me.data.email || "");
+        show("Session refreshed.");
       } else {
         show("No active session to refresh.");
-        toast("Refresh failed");
       }
     });
 
@@ -258,7 +325,6 @@
       const res = await apiFetch("/items/test");
       if (!res.ok) return show(`Fetch failed: ${res.status}\n${await res.text()}`);
       show(await res.json());
-      toast("Loaded ‘test’");
     });
 
     // Clear output
@@ -275,9 +341,6 @@
       if (res.ok) {
         setAuthedUI(false);
         show("Logged out.");
-        toast("Logged out");
-        // tiny pause so UI updates cleanly
-        await sleep(200);
       } else {
         show(`Logout failed: ${res.status}\n${await res.text()}`);
       }
