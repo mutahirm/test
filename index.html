@@ -1,6 +1,4 @@
-show all collections i have (except system) then let me click one of them and see the data inside
-
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -68,7 +66,7 @@ show all collections i have (except system) then let me click one of them and se
           <div class="flex items-center gap-3 text-base-sub">
             <div class="w-10 h-10 rounded-xl bg-base-line/50 flex items-center justify-center">
               <!-- lock icon -->
-              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none">
+              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M7 10V8a5 5 0 1 1 10 0v2" stroke="currentColor" stroke-width="1.5"/>
                 <rect x="4" y="10" width="16" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/>
                 <circle cx="12" cy="15" r="1.5" fill="currentColor"/>
@@ -178,6 +176,12 @@ show all collections i have (except system) then let me click one of them and se
       // Color states
       const pill = $("sessionPill");
       pill.className = "tick rounded-full border px-3 py-1.5 text-sm";
+      if (diff === 0) {
+        pill.classList.add("border-base-line","bg-red-500/10","text-base-text");
+        clearInterval(tickHandle);
+        tickHandle = null;
+        return;
+      }
       if (diff <= 60) {
         pill.classList.add("border-base-line","bg-red-500/10","text-base-text");
       } else if (diff <= 5 * 60) {
@@ -187,23 +191,64 @@ show all collections i have (except system) then let me click one of them and se
       }
     }
 
-    // Ask Directus for TTL (seconds) then compute absolute expiry.
-    // 1) POST /auth/refresh  -> JSON { data: { access_token, expires (seconds), ... } }
-    // 2) POST /auth/refresh  -> { mode:"session" } to align cookies with the fresh token
+    // ---- helpers: safe parse + jwt exp fallback ----
+    function decodeJwtExpSeconds(token) {
+      try {
+        const [, payload] = token.split(".");
+        const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+        if (typeof json?.exp === "number") {
+          const nowSec = Math.floor(Date.now() / 1000);
+          return Math.max(0, json.exp - nowSec);
+        }
+      } catch {}
+      return null;
+    }
+
+    // Ask Directus for TTL, robust to both JSON and session-only modes
     async function syncExpiryFromServer() {
+      // 1) Force JSON response so we can read expiry info
       const r = await fetch(`${API}/auth/refresh`, {
         method: "POST",
-        credentials: "include"
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ mode: "json" })
       });
+
       if (!r.ok) return false;
 
-      const payload = await r.json();
-      let ttl = payload?.data?.expires; // usually number of seconds (e.g. 900)
-      if (typeof ttl === "string" && !Number.isNaN(Number(ttl))) ttl = Number(ttl);
+      let ttlSeconds = null;
+      let absMs = null;
 
-      if (typeof ttl !== "number") return false;
+      // Some versions may 204 with empty body; guard it
+      const text = await r.text();
+      if (text) {
+        try {
+          const payload = JSON.parse(text);
+          const d = payload?.data ?? {};
 
-      // Reaffirm cookies for the refreshed token timing
+          // priority 1: numeric `expires` (seconds)
+          if (typeof d.expires === "number") ttlSeconds = d.expires;
+
+          // priority 2: ISO `expires_at`
+          if (!ttlSeconds && typeof d.expires_at === "string") {
+            const ts = Date.parse(d.expires_at);
+            if (!Number.isNaN(ts)) absMs = ts;
+          }
+
+          // priority 3: JWT exp claim
+          if (!ttlSeconds && !absMs && typeof d.access_token === "string") {
+            const jwtTtl = decodeJwtExpSeconds(d.access_token);
+            if (jwtTtl != null) ttlSeconds = jwtTtl;
+          }
+        } catch {
+          // ignore JSON parse errors; fall through
+        }
+      }
+
+      if (ttlSeconds != null) absMs = Date.now() + ttlSeconds * 1000;
+      if (!absMs) return false;
+
+      // 2) Align cookies to match the refreshed token timing
       await fetch(`${API}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -211,7 +256,7 @@ show all collections i have (except system) then let me click one of them and se
         body: JSON.stringify({ mode: "session" })
       });
 
-      setSessionExpiryMs(Date.now() + ttl * 1000);
+      setSessionExpiryMs(absMs);
       return true;
     }
 
@@ -244,14 +289,21 @@ show all collections i have (except system) then let me click one of them and se
       return r.ok ? r.json() : null;
     }
 
-    // ======= INIT: refresh → me → start timer =======
+    // ======= INIT: refresh(json) → me → start timer =======
     (async () => {
       try {
-        await refreshSession();            // quietly renew if possible
+        // Try to renew and get JSON so we can compute expiry
+        await fetch(`${API}/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ mode: "json" })
+        });
+
         const me = await fetchMe();
         if (me?.data) {
           setAuthedUI(true, me.data.email || "");
-          await syncExpiryFromServer();    // kick off countdown
+          await syncExpiryFromServer(); // kick off countdown
         } else {
           setAuthedUI(false);
         }
