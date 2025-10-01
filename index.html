@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Directus Portal Demo — Session Aware</title>
+  <title>Directus Portal Demo — Session Timer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- Tailwind CDN -->
@@ -143,33 +143,31 @@
         $("actions").classList.add("hidden");
         $("logout").classList.add("hidden");
         $("hint").classList.add("hidden");
-        setSessionExpiry(null);
+        setSessionExpiryMs(null);
       }
     }
 
     // ======= SESSION TIMER =======
-    let expiryTs = null;      // epoch ms for access token expiry
+    let expiryAtMs = null; // epoch ms
     let tickHandle = null;
 
-    function setSessionExpiry(isoOrNull) {
-      if (!isoOrNull) {
-        expiryTs = null;
+    function setSessionExpiryMs(msOrNull) {
+      expiryAtMs = msOrNull;
+      if (!msOrNull) {
         $("sessionTime").textContent = "—";
         $("sessionPill").className = "tick rounded-full border px-3 py-1.5 text-sm border-base-line text-base-sub";
         if (tickHandle) { clearInterval(tickHandle); tickHandle = null; }
         return;
       }
-      // Parse ISO string into ms
-      expiryTs = Date.parse(isoOrNull);
       if (tickHandle) clearInterval(tickHandle);
       tickHandle = setInterval(updateCountdown, 1000);
       updateCountdown();
     }
 
     function updateCountdown() {
-      if (!expiryTs) return;
+      if (!expiryAtMs) return;
       const now = Date.now();
-      let diff = Math.max(0, Math.floor((expiryTs - now) / 1000)); // seconds
+      let diff = Math.max(0, Math.floor((expiryAtMs - now) / 1000)); // seconds
 
       const mm = String(Math.floor(diff / 60)).padStart(2, "0");
       const ss = String(diff % 60).padStart(2, "0");
@@ -187,23 +185,23 @@
       }
     }
 
-    // Ask Directus for the access token expiry (without storing the token):
-    // We call /auth/refresh with mode:"json" to get { data: { access_token, expires } }.
-    // Then we immediately ensure cookies are fresh with mode:"session".
+    // Ask Directus for TTL (seconds) then compute absolute expiry.
+    // 1) POST /auth/refresh  -> JSON { data: { access_token, expires (seconds), ... } }
+    // 2) POST /auth/refresh  -> { mode:"session" } to align cookies with the fresh token
     async function syncExpiryFromServer() {
-      // 1) Get expiry
       const r = await fetch(`${API}/auth/refresh`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ mode: "json" })
+        credentials: "include"
       });
       if (!r.ok) return false;
-      const payload = await r.json();
-      const iso = payload?.data?.expires; // ISO timestamp
-      if (!iso) return false;
 
-      // 2) Reaffirm cookies to match the fresh token timing
+      const payload = await r.json();
+      let ttl = payload?.data?.expires; // usually number of seconds (e.g. 900)
+      if (typeof ttl === "string" && !Number.isNaN(Number(ttl))) ttl = Number(ttl);
+
+      if (typeof ttl !== "number") return false;
+
+      // Reaffirm cookies for the refreshed token timing
       await fetch(`${API}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -211,7 +209,7 @@
         body: JSON.stringify({ mode: "session" })
       });
 
-      setSessionExpiry(iso);
+      setSessionExpiryMs(Date.now() + ttl * 1000);
       return true;
     }
 
@@ -244,14 +242,14 @@
       return r.ok ? r.json() : null;
     }
 
-    // ======= INIT: refresh → me → expiry =======
+    // ======= INIT: refresh → me → start timer =======
     (async () => {
       try {
-        await refreshSession();            // try to renew quietly
-        const me = await fetchMe();        // see if we're signed in
+        await refreshSession();            // quietly renew if possible
+        const me = await fetchMe();
         if (me?.data) {
           setAuthedUI(true, me.data.email || "");
-          await syncExpiryFromServer();    // start the countdown
+          await syncExpiryFromServer();    // kick off countdown
         } else {
           setAuthedUI(false);
         }
@@ -291,7 +289,7 @@
         const me = await meRes.json();
         setAuthedUI(true, me?.data?.email || "");
         show("Login successful.");
-        await syncExpiryFromServer(); // kick off timer
+        await syncExpiryFromServer(); // start timer after login
       } else {
         setAuthedUI(false);
         show(`Login returned but /users/me failed: ${meRes.status}`);
