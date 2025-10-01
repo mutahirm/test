@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Directus Portal Demo — Session Timer</title>
+  <title>Directus Portal Demo — Session Timer (Debug)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- Tailwind CDN -->
@@ -133,12 +133,18 @@
 
   <script>
     // ======= CONFIG =======
-    const API = "https://test.mutahirmasood.com/api"; // Directus mount
+    const API = "https://test.mutahirmasood.com/api"; // Directus mount (adjust if needed)
 
     // ======= UI UTILS =======
     const $ = (id) => document.getElementById(id);
     function toast(msg) { $("toastMsg").textContent = msg; $("toast").classList.remove("hidden"); setTimeout(()=>$("toast").classList.add("hidden"), 2200); }
-    function show(o) { $("output").textContent = typeof o === "string" ? o : JSON.stringify(o, null, 2); }
+    function show(o) {
+      // append-style logging so you can see a timeline
+      const el = $("output");
+      const line = (typeof o === "string" ? o : JSON.stringify(o, null, 2)) + "\n";
+      el.textContent += line;
+      el.scrollTop = el.scrollHeight;
+    }
     function setAuthedUI(isAuthed, meEmail = "") {
       if (isAuthed) {
         $("status").textContent = meEmail ? `Signed in — ${meEmail}` : "Signed in";
@@ -173,9 +179,11 @@
       if (!msOrNull) {
         $("sessionTime").textContent = "—";
         $("sessionPill").className = "tick rounded-full border px-3 py-1.5 text-sm border-base-line text-base-sub";
+        show("Timer cleared.");
         return;
       }
 
+      show(`Timer set: expires at ${new Date(msOrNull).toISOString()}`);
       startTicking();
       scheduleProactiveRefresh();
     }
@@ -200,6 +208,7 @@
       if (diff === 0) {
         pill.classList.add("border-base-line","bg-red-500/10","text-base-text");
         clearSchedule();
+        show("Timer reached 0.");
         return;
       }
       if (diff <= 60) {
@@ -211,8 +220,7 @@
       }
     }
 
-    // ======= AUTH (Docs-aligned) =======
-    // Helper: decode JWT 'exp' as a fallback (if needed)
+    // ======= AUTH HELPERS (robust parsing) =======
     function decodeJwtExpSeconds(token) {
       try {
         const [, payload] = token.split(".");
@@ -225,42 +233,37 @@
       return null;
     }
 
-    // Sets expiry from a Directus JSON response { data: { expires, expires_at?, access_token? } }
     function setExpiryFromDirectusData(d) {
       let ttlSeconds = null;
       let absMs = null;
 
       if (typeof d?.expires === "number") ttlSeconds = d.expires;
+      if (typeof d?.expires === "string" && !Number.isNaN(parseFloat(d.expires))) {
+        ttlSeconds = parseFloat(d.expires);
+      }
+
       if (!ttlSeconds && typeof d?.expires_at === "string") {
         const ts = Date.parse(d.expires_at);
         if (!Number.isNaN(ts)) absMs = ts;
       }
+
       if (!ttlSeconds && !absMs && typeof d?.access_token === "string") {
         const t = decodeJwtExpSeconds(d.access_token);
         if (t != null) ttlSeconds = t;
       }
+
       if (ttlSeconds != null) absMs = Date.now() + ttlSeconds * 1000;
 
-      if (absMs) setSessionExpiryMs(absMs);
-      return Boolean(absMs);
+      if (absMs) {
+        setSessionExpiryMs(absMs);
+        return true;
+      } else {
+        show("No expiry info in response.");
+        return false;
+      }
     }
 
-    async function login(email, password) {
-      const r = await fetch(`${API}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type":"application/json" },
-        credentials: "include",
-        // Ask for JSON so the response includes { data: { access_token, expires, refresh_token } }
-        body: JSON.stringify({ email, password, mode: "json" })
-      });
-      if (!r.ok) throw new Error(`Login failed: ${r.status}`);
-      const { data } = await r.json();
-      setExpiryFromDirectusData(data);
-      // Align cookies if your app uses cookie auth for subsequent calls
-      await refreshSessionCookies();
-      return true;
-    }
-
+    // ======= NETWORK (with verbose logging) =======
     async function refreshJson() {
       const r = await fetch(`${API}/auth/refresh`, {
         method: "POST",
@@ -268,22 +271,79 @@
         credentials: "include",
         body: JSON.stringify({ mode: "json" })
       });
+
+      show(`refreshJson status: ${r.status}`);
       if (!r.ok) return false;
+
       const text = await r.text();
-      if (!text) return false;
-      const { data } = JSON.parse(text);
-      setExpiryFromDirectusData(data);
-      return true;
+      if (!text) {
+        show("refreshJson: empty body (likely 204).");
+        return false;
+      }
+
+      try {
+        const parsed = JSON.parse(text);
+        show({ refreshJson_data: parsed.data ?? null });
+        return setExpiryFromDirectusData(parsed?.data);
+      } catch (e) {
+        show(`refreshJson: JSON parse error: ${String(e)}`);
+        show(`Body (first 300 chars): ${text.slice(0,300)}…`);
+        return false;
+      }
     }
 
-    // Optional: re-align cookies after a JSON refresh (for cookie-mode apps)
     async function refreshSessionCookies() {
-      await fetch(`${API}/auth/refresh`, {
+      const r = await fetch(`${API}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type":"application/json" },
         credentials: "include",
         body: JSON.stringify({ mode: "session" })
       });
+      show(`refreshSessionCookies status: ${r.status}`);
+      return r.ok;
+    }
+
+    async function login(email, password) {
+      const r = await fetch(`${API}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type":"application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email, password, mode: "json" })
+      });
+
+      show(`login status: ${r.status}`);
+      if (!r.ok) throw new Error(`Login failed: ${r.status}`);
+
+      const text = await r.text();
+      show({ login_body_first300: text.slice(0,300) });
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch (e) {
+        show(`login parse error: ${String(e)}`);
+        throw e;
+      }
+      setExpiryFromDirectusData(parsed?.data);
+      await refreshSessionCookies(); // align cookies if you use cookie auth downstream
+      return true;
+    }
+
+    // Generic fetch with one-time auto refresh on 401
+    async function apiFetch(path, init = {}, { retryOn401 = true } = {}) {
+      let res = await fetch(`${API}${path}`, { credentials: "include", ...init });
+      if (res.status === 401 && retryOn401) {
+        show(`apiFetch(${path}) got 401 → attempting refresh`);
+        const ok = await refreshJson();
+        if (ok) await refreshSessionCookies();
+        res = await fetch(`${API}${path}`, { credentials: "include", ...init });
+      }
+      return res;
+    }
+
+    async function fetchMe() {
+      const r = await apiFetch("/users/me", { method: "GET" }, { retryOn401: false });
+      show(`GET /users/me status: ${r.status}`);
+      return r.ok ? r.json() : null;
     }
 
     // Proactive refresh ~10s before expiry
@@ -291,35 +351,19 @@
       const leadMs = 10_000;
       const delay = Math.max(0, expiryAtMs - Date.now() - leadMs);
       refreshTimeout = setTimeout(async () => {
+        show("Proactive refresh firing…");
         const ok = await refreshJson();
         if (ok) await refreshSessionCookies();
         scheduleProactiveRefresh();
       }, delay);
     }
 
-    // API fetch with one-time auto refresh on 401
-    async function apiFetch(path, init = {}, { retryOn401 = true } = {}) {
-      let res = await fetch(`${API}${path}`, { credentials: "include", ...init });
-      if (res.status === 401 && retryOn401) {
-        const ok = await refreshJson();
-        if (ok) {
-          await refreshSessionCookies();
-          res = await fetch(`${API}${path}`, { credentials: "include", ...init });
-        }
-      }
-      return res;
-    }
-
-    async function fetchMe() {
-      const r = await apiFetch("/users/me", { method: "GET" }, { retryOn401: false });
-      return r.ok ? r.json() : null;
-    }
-
     // ======= INIT: try JSON refresh → cookies → me → timer =======
     (async () => {
       try {
-        await refreshJson();              // quietly renew + get TTL
-        await refreshSessionCookies();    // ensure cookies match
+        show("Init: attempting refreshJson…");
+        const gotTTL = await refreshJson();      // quietly renew + get TTL
+        if (gotTTL) await refreshSessionCookies(); // match cookies
         const me = await fetchMe();
         if (me?.data) {
           setAuthedUI(true, me.data.email || "");
@@ -389,7 +433,7 @@
     });
 
     // Clear output
-    $("clearOut").addEventListener("click", () => show(""));
+    $("clearOut").addEventListener("click", () => { $("output").textContent = ""; });
 
     // Logout
     $("logout").addEventListener("click", async () => {
