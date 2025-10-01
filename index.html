@@ -1,348 +1,381 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Directus Portal Demo — Session Timer</title>
+  <meta charset="utf-8" />
+  <title>Directus Portal — Collections Browser</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Tailwind CDN -->
+  <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
-          fontFamily: { sans: ['ui-sans-serif','system-ui','Inter','Segoe UI','Roboto','Arial'] },
+          fontFamily: { sans: ['Inter','ui-sans-serif','system-ui','Segoe UI','Roboto','Arial'] },
           colors: {
-            base: {
-              bg: '#0B0F17',
-              card: '#111827',
-              line: '#1F2937',
-              text: '#E5E7EB',
-              sub: '#9CA3AF',
-              brand: '#60A5FA',
-              brand2: '#34D399',
-              warn: '#FBBF24',
-              danger: '#F87171'
-            }
+            ink:  '#0B0F17',
+            pane: '#1a1333',
+            pane2:'#221a44',
+            card: '#2b215c',
+            line: '#3b2c7a',
+            text: '#F2F3F5',
+            sub:  '#C9CADA',
+            brand:'#8B7BFF',
+            brand2:'#FF7BA5',
+            good: '#22c55e',
+            warn: '#f59e0b',
+            bad:  '#ef4444'
           },
           boxShadow: {
-            soft: '0 6px 30px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.03)'
+            glass: '0 10px 40px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.04)'
+          },
+          borderRadius: {
+            xl2: '1.25rem'
           }
         }
       }
     }
   </script>
   <style>
-    .glass { background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); backdrop-filter: blur(10px) saturate(120%); }
+    .glass { background: linear-gradient(160deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); backdrop-filter: blur(10px) saturate(120%); }
+    .elev { box-shadow: 0 20px 80px rgba(63, 48, 142, .35); }
     .btn:disabled { opacity:.5; cursor:not-allowed; }
-    .tick { transition: color .2s ease, background-color .2s ease, border-color .2s ease; }
   </style>
 </head>
-<body class="min-h-screen bg-base-bg text-base-text">
-  <div class="max-w-3xl mx-auto px-4 py-10">
-    <!-- Header -->
-    <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-      <h1 class="text-2xl md:text-3xl font-semibold tracking-tight">Directus Portal</h1>
+<body class="min-h-screen bg-ink text-text">
 
-      <!-- Session indicator -->
-      <div class="flex items-center gap-3">
-        <div id="sessionPill" class="tick rounded-full border px-3 py-1.5 text-sm border-base-line text-base-sub">
-          <span class="opacity-70">Session:</span> <span id="sessionTime">—</span>
+  <!-- Shell -->
+  <div class="mx-auto max-w-7xl px-4 md:px-8 py-6 md:py-10 grid grid-cols-12 gap-6">
+
+    <!-- Sidebar -->
+    <aside class="col-span-12 md:col-span-2 rounded-xl2 glass shadow-glass border border-line/40 p-3 md:p-4">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-2xl bg-brand/20 flex items-center justify-center">
+          <svg viewBox="0 0 24 24" class="w-6 h-6 text-brand"><path d="M4 7a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7Z" fill="currentColor" opacity=".2"/><path d="M8 7h8v10H8z" stroke="currentColor" fill="none"/></svg>
         </div>
-        <button id="logout" class="btn hidden rounded-xl px-4 py-2 bg-base-line/50 hover:bg-base-line text-base-sub hover:text-base-text transition">
-          Logout
-        </button>
+        <div>
+          <div class="text-sm uppercase tracking-wider text-sub/80">Primary</div>
+          <div class="font-semibold">Dashboard</div>
+        </div>
       </div>
-    </header>
 
-    <!-- Card -->
-    <section class="mt-8 glass rounded-2xl shadow-soft border border-base-line">
-      <div class="p-6 md:p-8">
-        <!-- Status -->
-        <div id="status" class="text-sm text-base-sub mb-4">Initializing…</div>
+      <nav class="space-y-2">
+        <button id="navCollections" class="w-full text-left px-3 py-2 rounded-xl bg-brand/10 hover:bg-brand/20 border border-line/30">
+          Collections
+        </button>
+        <button id="navSession" class="w-full text-left px-3 py-2 rounded-xl bg-card/40 hover:bg-card/60 border border-line/30">
+          Session
+        </button>
+      </nav>
 
-        <!-- Login Form -->
-        <form id="loginForm" class="space-y-4">
-          <div class="flex items-center gap-3 text-base-sub">
-            <div class="w-10 h-10 rounded-xl bg-base-line/50 flex items-center justify-center">
-              <!-- lock icon -->
-              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none">
-                <path d="M7 10V8a5 5 0 1 1 10 0v2" stroke="currentColor" stroke-width="1.5"/>
-                <rect x="4" y="10" width="16" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/>
-                <circle cx="12" cy="15" r="1.5" fill="currentColor"/>
-              </svg>
-            </div>
-            <div>
-              <h2 class="text-lg font-medium text-base-text">Sign in</h2>
-              <p class="text-xs">Session cookie mode — secure, no tokens in localStorage.</p>
-            </div>
+      <div class="mt-6 text-xs text-sub/80 leading-relaxed">
+        Logged in as <span id="miniMe" class="text-text/90">—</span>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="col-span-12 md:col-span-7 space-y-6">
+
+      <!-- Overview card -->
+      <section class="rounded-xl2 glass elev border border-line/40 p-5 md:p-7">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div class="text-sm text-sub/80">Overview</div>
+            <h1 class="text-2xl md:text-3xl font-semibold">Data Browser</h1>
           </div>
 
-          <div class="grid md:grid-cols-2 gap-3">
-            <input id="email" type="email" autocomplete="username" placeholder="Email"
-                   class="w-full rounded-xl bg-base-card/60 border border-base-line px-4 py-3 focus:outline-none focus:ring-2 focus:ring-base-brand/60" required />
-            <input id="password" type="password" autocomplete="current-password" placeholder="Password"
-                   class="w-full rounded-xl bg-base-card/60 border border-base-line px-4 py-3 focus:outline-none focus:ring-2 focus:ring-base-brand/60" required />
+          <!-- Session pill -->
+          <div id="sessionPill" class="flex items-center gap-2 rounded-full border border-line/40 bg-card/40 px-3 py-1.5 text-sm">
+            <span class="opacity-70">Session</span>
+            <span id="sessionTime" class="font-semibold">—</span>
           </div>
+        </div>
 
-          <div class="flex items-center gap-3">
-            <button id="loginBtn" type="submit"
-                    class="btn rounded-xl bg-base-brand hover:bg-blue-400 text-black font-medium px-5 py-3 transition">
-              Login
-            </button>
-            <button id="refreshBtn" type="button"
-                    class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-3 text-base-sub hover:text-base-text transition">
-              Refresh Session
-            </button>
-            <span id="hint" class="text-xs text-base-sub hidden">Logged in — try loading data.</span>
+        <!-- Search + actions -->
+        <div class="mt-5 grid grid-cols-1 md:grid-cols-3 gap-3">
+          <input id="searchInput" placeholder="Search in table…" class="rounded-xl bg-card/40 border border-line/40 px-4 py-3 outline-none focus:ring-2 focus:ring-brand/60" />
+          <select id="collectionSelect" class="rounded-xl bg-card/40 border border-line/40 px-4 py-3 outline-none focus:ring-2 focus:ring-brand/60">
+            <option value="">Select a collection…</option>
+          </select>
+          <div class="flex gap-3">
+            <button id="btnPrev" class="btn flex-1 rounded-xl bg-card/40 border border-line/40 hover:bg-card/60 px-4 py-3">Prev</button>
+            <button id="btnNext" class="btn flex-1 rounded-xl bg-brand text-ink font-semibold hover:brightness-110 px-4 py-3">Next</button>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <div class="mt-5 overflow-auto rounded-xl border border-line/40">
+          <table class="min-w-full text-sm">
+            <thead class="bg-card/60">
+              <tr id="theadRow"></tr>
+            </thead>
+            <tbody id="tbodyRows" class="divide-y divide-line/30"></tbody>
+          </table>
+        </div>
+
+        <div id="emptyState" class="hidden mt-6 text-center text-sub">Pick a collection to see its rows.</div>
+      </section>
+
+      <!-- Collections grid -->
+      <section class="rounded-xl2 glass border border-line/40 p-5 md:p-7">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold">All Collections</h2>
+          <button id="reloadCollections" class="rounded-xl bg-card/40 border border-line/40 px-3 py-2 hover:bg-card/60">Reload</button>
+        </div>
+        <div id="collectionsGrid" class="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+      </section>
+    </main>
+
+    <!-- Right rail -->
+    <aside class="col-span-12 md:col-span-3 space-y-6">
+
+      <!-- Session / Auth card -->
+      <section class="rounded-xl2 glass border border-line/40 p-5 md:p-6">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <div class="text-sm text-sub/80">Account</div>
+            <div class="font-semibold">Session & Login</div>
+          </div>
+          <button id="logout" class="btn hidden rounded-xl px-4 py-2 bg-card/40 border border-line/40 hover:bg-card/60">
+            Logout
+          </button>
+        </div>
+
+        <div id="status" class="text-sm text-sub/80 mb-4">Initializing…</div>
+
+        <form id="loginForm" class="space-y-3">
+          <input id="email" type="email" placeholder="Email" autocomplete="username"
+                 class="w-full rounded-xl bg-card/40 border border-line/40 px-4 py-3 focus:ring-2 focus:ring-brand/60" required />
+          <input id="password" type="password" placeholder="Password" autocomplete="current-password"
+                 class="w-full rounded-xl bg-card/40 border border-line/40 px-4 py-3 focus:ring-2 focus:ring-brand/60" required />
+          <div class="flex gap-3">
+            <button id="loginBtn" type="submit" class="btn flex-1 rounded-xl bg-brand text-ink font-semibold px-4 py-3 hover:brightness-110">Login</button>
+            <button id="refreshBtn" type="button" class="btn flex-1 rounded-xl bg-card/40 border border-line/40 hover:bg-card/60 px-4 py-3">Refresh</button>
           </div>
         </form>
+      </section>
 
-        <!-- Actions (authed) -->
-        <div id="actions" class="hidden mt-2">
-          <div class="flex flex-wrap gap-3">
-            <button id="whoami" class="btn rounded-xl bg-base-brand/20 hover:bg-base-brand/30 text-base-text px-4 py-2 transition">Who am I?</button>
-            <button id="loadData" class="btn rounded-xl bg-base-brand2/20 hover:bg-base-brand2/30 text-base-text px-4 py-2 transition">Load “test” Collection</button>
-            <button id="clearOut" class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-2 text-base-sub hover:text-base-text transition">Clear</button>
-          </div>
-        </div>
+      <!-- Info / Toast -->
+      <section class="rounded-xl2 glass border border-line/40 p-5 md:p-6">
+        <div class="text-sm text-sub/90">Tip: the purple pills and soft gradients echo your reference. Cards are glassy; corners are large; spacing is generous.</div>
+      </section>
 
-        <!-- Output -->
-        <div class="mt-6">
-          <pre id="output" class="rounded-xl bg-black/60 border border-base-line p-4 overflow-auto text-sm leading-relaxed"></pre>
-        </div>
-      </div>
-    </section>
+    </aside>
+  </div>
 
-    <!-- Toast -->
-    <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 hidden">
-      <div class="rounded-xl bg-white/10 text-base-text px-4 py-2 border border-base-line shadow-soft">
-        <span id="toastMsg" class="text-sm"></span>
-      </div>
-    </div>
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 hidden z-50">
+    <div class="rounded-xl bg-card/80 border border-line/40 px-4 py-2 text-sm"> <span id="toastMsg"></span> </div>
   </div>
 
   <script>
-    // ======= CONFIG =======
-    const API = "https://test.mutahirmasood.com/api"; // same-origin Directus mount
+    // ===== CONFIG =====
+    const API = "https://test.mutahirmasood.com/api";    // your same-origin Directus mount
+    const PAGE_SIZE = 25;
 
-    // ======= UI UTILS =======
+    // ===== UI utils =====
     const $ = (id) => document.getElementById(id);
-    function toast(msg) { $("toastMsg").textContent = msg; $("toast").classList.remove("hidden"); setTimeout(()=>$("toast").classList.add("hidden"), 2200); }
-    function show(o) { $("output").textContent = typeof o === "string" ? o : JSON.stringify(o, null, 2); }
-    function setAuthedUI(isAuthed, meEmail = "") {
-      if (isAuthed) {
-        $("status").textContent = meEmail ? `Signed in — ${meEmail}` : "Signed in";
-        $("loginForm").classList.add("hidden");
-        $("actions").classList.remove("hidden");
-        $("logout").classList.remove("hidden");
-        $("hint").classList.remove("hidden");
-      } else {
-        $("status").textContent = "Please log in.";
-        $("loginForm").classList.remove("hidden");
-        $("actions").classList.add("hidden");
-        $("logout").classList.add("hidden");
-        $("hint").classList.add("hidden");
-        setSessionExpiryMs(null);
-      }
-    }
+    function toast(msg){ $("toastMsg").textContent=msg; $("toast").classList.remove("hidden"); setTimeout(()=>$("toast").classList.add("hidden"),1800); }
 
-    // ======= SESSION TIMER =======
-    let expiryAtMs = null; // epoch ms
-    let tickHandle = null;
-
-    function setSessionExpiryMs(msOrNull) {
+    // ===== Session timer =====
+    let expiryAtMs = null, tickHandle = null;
+    function setSessionExpiryMs(msOrNull){
       expiryAtMs = msOrNull;
-      if (!msOrNull) {
-        $("sessionTime").textContent = "—";
-        $("sessionPill").className = "tick rounded-full border px-3 py-1.5 text-sm border-base-line text-base-sub";
-        if (tickHandle) { clearInterval(tickHandle); tickHandle = null; }
-        return;
-      }
-      if (tickHandle) clearInterval(tickHandle);
-      tickHandle = setInterval(updateCountdown, 1000);
-      updateCountdown();
+      if(tickHandle) { clearInterval(tickHandle); tickHandle=null; }
+      if(!msOrNull){ $("sessionTime").textContent = "—"; $("sessionPill").className="flex items-center gap-2 rounded-full border border-line/40 bg-card/40 px-3 py-1.5 text-sm"; return; }
+      tickHandle = setInterval(updateCountdown, 1000); updateCountdown();
     }
-
-    function updateCountdown() {
-      if (!expiryAtMs) return;
-      const now = Date.now();
-      let diff = Math.max(0, Math.floor((expiryAtMs - now) / 1000)); // seconds
-
-      const mm = String(Math.floor(diff / 60)).padStart(2, "0");
-      const ss = String(diff % 60).padStart(2, "0");
-      $("sessionTime").textContent = `${mm}:${ss}`;
-
-      // Color states
+    function updateCountdown(){
       const pill = $("sessionPill");
-      pill.className = "tick rounded-full border px-3 py-1.5 text-sm";
-      if (diff <= 60) {
-        pill.classList.add("border-base-line","bg-red-500/10","text-base-text");
-      } else if (diff <= 5 * 60) {
-        pill.classList.add("border-base-line","bg-base-warn/10","text-base-text");
-      } else {
-        pill.classList.add("border-base-line","text-base-sub");
-      }
+      const left = Math.max(0, Math.floor((expiryAtMs - Date.now())/1000));
+      const mm = String(Math.floor(left/60)).padStart(2,"0");
+      const ss = String(left%60).padStart(2,"0");
+      $("sessionTime").textContent = `${mm}:${ss}`;
+      pill.className="flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm";
+      if(left<=60) pill.classList.add("border-line/40","bg-bad/20"); else
+      if(left<=300) pill.classList.add("border-line/40","bg-warn/20"); else
+        pill.classList.add("border-line/40","bg-card/40");
     }
-
-    // Ask Directus for TTL (seconds) then compute absolute expiry.
-    // 1) POST /auth/refresh  -> JSON { data: { access_token, expires (seconds), ... } }
-    // 2) POST /auth/refresh  -> { mode:"session" } to align cookies with the fresh token
-    async function syncExpiryFromServer() {
-      const r = await fetch(`${API}/auth/refresh`, {
-        method: "POST",
-        credentials: "include"
-      });
-      if (!r.ok) return false;
-
-      const payload = await r.json();
-      let ttl = payload?.data?.expires; // usually number of seconds (e.g. 900)
-      if (typeof ttl === "string" && !Number.isNaN(Number(ttl))) ttl = Number(ttl);
-
-      if (typeof ttl !== "number") return false;
-
-      // Reaffirm cookies for the refreshed token timing
-      await fetch(`${API}/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ mode: "session" })
-      });
-
-      setSessionExpiryMs(Date.now() + ttl * 1000);
+    async function syncExpiryFromServer(){
+      // Ask for JSON (no cookie set) to read TTL in seconds
+      const r = await fetch(`${API}/auth/refresh`, { method:"POST", credentials:"include" });
+      if(!r.ok) return false;
+      const body = await r.json();
+      let ttl = body?.data?.expires;
+      if(typeof ttl === "string") ttl = Number(ttl);
+      if(typeof ttl !== "number") return false;
+      // Ensure cookies align with the refreshed token timing
+      await fetch(`${API}/auth/refresh`, { method:"POST", headers:{ "Content-Type":"application/json" }, credentials:"include", body: JSON.stringify({ mode:"session" }) });
+      setSessionExpiryMs(Date.now() + ttl*1000);
       return true;
     }
 
-    // ======= AUTH HELPERS =======
-    async function refreshSession() {
-      const r = await fetch(`${API}/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ mode: "session" })
-      });
+    // ===== API helpers =====
+    async function refreshSession(){
+      const r = await fetch(`${API}/auth/refresh`, { method:"POST", headers:{ "Content-Type":"application/json" }, credentials:"include", body: JSON.stringify({ mode:"session" }) });
       return r.ok;
     }
-
-    // Generic fetch with one-time auto refresh on 401
-    async function apiFetch(path, init = {}, { retryOn401 = true } = {}) {
-      let res = await fetch(`${API}${path}`, { credentials: "include", ...init });
-      if (res.status === 401 && retryOn401) {
+    async function apiFetch(path, init={}, {retryOn401=true}={}){
+      let res = await fetch(`${API}${path}`, { credentials:"include", ...init });
+      if(res.status===401 && retryOn401){
         const ok = await refreshSession();
-        if (ok) {
-          await syncExpiryFromServer();
-          res = await fetch(`${API}${path}`, { credentials: "include", ...init });
-        }
+        if(ok){ await syncExpiryFromServer(); res = await fetch(`${API}${path}`, { credentials:"include", ...init }); }
       }
       return res;
     }
 
-    async function fetchMe() {
-      const r = await apiFetch("/users/me", { method: "GET" }, { retryOn401: false });
-      return r.ok ? r.json() : null;
+    // ===== State =====
+    let currentCollection = "";
+    let currentPage = 1;
+    let currentRows = [];
+
+    // ===== Rendering =====
+    function renderTable(rows){
+      const thead = $("theadRow");
+      const tbody = $("tbodyRows");
+      tbody.innerHTML = ""; thead.innerHTML = "";
+
+      if(!rows || !rows.length){ $("emptyState").classList.remove("hidden"); return; }
+      $("emptyState").classList.add("hidden");
+
+      const cols = Array.from(new Set(rows.flatMap(r => Object.keys(r))));
+      cols.slice(0, 10).forEach(k=>{
+        const th = document.createElement("th");
+        th.className="text-left font-semibold px-4 py-3";
+        th.textContent = k;
+        thead.appendChild(th);
+      });
+
+      rows.forEach(r=>{
+        const tr = document.createElement("tr");
+        cols.slice(0,10).forEach(k=>{
+          const td = document.createElement("td");
+          td.className="px-4 py-3 text-sub";
+          const val = r[k];
+          td.textContent = (val===null||val===undefined) ? "" : (typeof val === "object" ? JSON.stringify(val) : String(val));
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+    }
+    function filterTable(term){
+      if(!term) return renderTable(currentRows);
+      const t = term.toLowerCase();
+      const filtered = currentRows.filter(row => JSON.stringify(row).toLowerCase().includes(t));
+      renderTable(filtered);
     }
 
-    // ======= INIT: refresh → me → start timer =======
-    (async () => {
-      try {
-        await refreshSession();            // quietly renew if possible
-        const me = await fetchMe();
-        if (me?.data) {
-          setAuthedUI(true, me.data.email || "");
-          await syncExpiryFromServer();    // kick off countdown
-        } else {
-          setAuthedUI(false);
-        }
-      } catch (e) {
-        setAuthedUI(false);
-        show(String(e));
+    function renderCollectionsGrid(list){
+      const grid = $("collectionsGrid"); grid.innerHTML="";
+      list.forEach(c=>{
+        const btn = document.createElement("button");
+        btn.className = "w-full text-left rounded-xl2 bg-gradient-to-br from-card/80 to-pane/70 border border-line/40 hover:brightness-110 p-4 shadow-glass";
+        btn.innerHTML = `
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-2xl bg-brand/20 flex items-center justify-center">
+              <svg class="w-5 h-5 text-brand" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3H4V6Zm0 5h16v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-7Z"/></svg>
+            </div>
+            <div>
+              <div class="font-semibold">${c.collection}</div>
+              <div class="text-xs text-sub/80">${c.schema?.comment || c.meta?.note || "—"}</div>
+            </div>
+          </div>`;
+        btn.addEventListener("click", ()=>{ $("collectionSelect").value=c.collection; pickCollection(c.collection); });
+        grid.appendChild(btn);
+      });
+    }
+
+    // ===== Data actions =====
+    async function loadCollections(){
+      const res = await apiFetch(`/collections?limit=-1`);
+      if(!res.ok) { toast("Failed to load collections"); return; }
+      const { data } = await res.json();
+      // Fill select
+      const sel = $("collectionSelect"); sel.innerHTML = `<option value="">Select a collection…</option>`;
+      data.forEach(c=>{
+        const opt = document.createElement("option");
+        opt.value=c.collection; opt.textContent=c.collection;
+        sel.appendChild(opt);
+      });
+      renderCollectionsGrid(data);
+    }
+
+    async function pickCollection(name){
+      currentCollection = name; currentPage=1;
+      await loadPage();
+    }
+
+    async function loadPage(){
+      if(!currentCollection){ $("emptyState").classList.remove("hidden"); renderTable([]); return; }
+      const offset = (currentPage-1)*PAGE_SIZE;
+      const res = await apiFetch(`/items/${encodeURIComponent(currentCollection)}?limit=${PAGE_SIZE}&offset=${offset}&meta=total_count`);
+      if(!res.ok){ toast("Failed to load data"); return; }
+      const body = await res.json();
+      currentRows = body.data || [];
+      renderTable(currentRows);
+    }
+
+    // ===== Event wiring =====
+    $("reloadCollections").addEventListener("click", loadCollections);
+    $("collectionSelect").addEventListener("change", (e)=> pickCollection(e.target.value));
+    $("btnPrev").addEventListener("click", async ()=>{ if(currentPage>1){ currentPage--; await loadPage(); }});
+    $("btnNext").addEventListener("click", async ()=>{ currentPage++; await loadPage(); });
+    $("searchInput").addEventListener("input", (e)=> filterTable(e.target.value));
+
+    // Sidebar nav (cosmetic)
+    $("navCollections").addEventListener("click", ()=> window.scrollTo({ top: document.body.scrollHeight/3, behavior:"smooth"}));
+    $("navSession").addEventListener("click", ()=> document.querySelector("aside ~ aside section").scrollIntoView({behavior:"smooth"}));
+
+    // ===== Auth flow =====
+    function setAuthedUI(isAuthed, email=""){
+      $("miniMe").textContent = isAuthed ? email : "—";
+      if(isAuthed){
+        $("status").textContent = `Signed in${email ? " — "+email : ""}`;
+        $("logout").classList.remove("hidden");
+        $("loginForm").classList.add("hidden");
+      } else {
+        $("status").textContent = "Please log in.";
+        $("logout").classList.add("hidden");
+        $("loginForm").classList.remove("hidden");
+        setSessionExpiryMs(null);
       }
-    })();
+    }
 
-    // ======= EVENTS =======
-    // Login
-    $("loginForm").addEventListener("submit", async (e) => {
+    $("loginForm").addEventListener("submit", async (e)=>{
       e.preventDefault();
-      $("loginBtn").disabled = true;
-      show("Logging in…");
-
+      $("loginBtn").disabled=true;
       const email = $("email").value.trim();
       const password = $("password").value;
-
-      const res = await fetch(`${API}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ email, password, mode: "session" })
+      const r = await fetch(`${API}/auth/login`, {
+        method:"POST", headers:{ "Content-Type":"application/json" }, credentials:"include",
+        body: JSON.stringify({ email, password, mode:"session" })
       });
-
-      $("loginBtn").disabled = false;
-
-      if (!res.ok) {
-        const err = await res.text();
-        show(`Login failed: ${res.status}\n${err}`);
-        return;
-      }
-
-      const meRes = await apiFetch("/users/me");
-      if (meRes.ok) {
-        const me = await meRes.json();
-        setAuthedUI(true, me?.data?.email || "");
-        show("Login successful.");
-        await syncExpiryFromServer(); // start timer after login
-      } else {
-        setAuthedUI(false);
-        show(`Login returned but /users/me failed: ${meRes.status}`);
-      }
+      $("loginBtn").disabled=false;
+      if(!r.ok){ toast("Login failed"); return; }
+      const meR = await apiFetch("/users/me");
+      if(meR.ok){ const me = await meR.json(); setAuthedUI(true, me?.data?.email||""); toast("Logged in"); await syncExpiryFromServer(); await loadCollections(); }
     });
 
-    // Manual refresh
-    $("refreshBtn").addEventListener("click", async () => {
-      show("Refreshing session…");
+    $("refreshBtn").addEventListener("click", async ()=>{
       const ok = await refreshSession();
-      if (ok) {
-        await syncExpiryFromServer();
-        const me = await fetchMe();
-        if (me?.data) setAuthedUI(true, me.data.email || "");
-        show("Session refreshed.");
-      } else {
-        show("No active session to refresh.");
-      }
+      if(ok){ await syncExpiryFromServer(); const meR = await apiFetch("/users/me"); if(meR.ok){ const me = await meR.json(); setAuthedUI(true, me?.data?.email||""); } toast("Session refreshed"); }
+      else toast("No active session");
     });
 
-    // Who am I
-    $("whoami").addEventListener("click", async () => {
-      const res = await apiFetch("/users/me");
-      if (!res.ok) return show(`WhoAmI failed: ${res.status}\n${await res.text()}`);
-      show(await res.json());
+    $("logout").addEventListener("click", async ()=>{
+      const r = await fetch(`${API}/auth/logout`, { method:"POST", headers:{ "Content-Type":"application/json" }, credentials:"include", body: JSON.stringify({mode:"session"}) });
+      if(r.ok){ setAuthedUI(false); toast("Logged out"); }
     });
 
-    // Load collection "test"
-    $("loadData").addEventListener("click", async () => {
-      show("Loading collection…");
-      const res = await apiFetch("/items/test");
-      if (!res.ok) return show(`Fetch failed: ${res.status}\n${await res.text()}`);
-      show(await res.json());
-    });
-
-    // Clear output
-    $("clearOut").addEventListener("click", () => show(""));
-
-    // Logout
-    $("logout").addEventListener("click", async () => {
-      const res = await fetch(`${API}/auth/logout`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ mode: "session" })
-      });
-      if (res.ok) {
-        setAuthedUI(false);
-        show("Logged out.");
-      } else {
-        show(`Logout failed: ${res.status}\n${await res.text()}`);
-      }
-    });
+    // ===== Init =====
+    (async ()=>{
+      try{
+        await refreshSession();                 // quietly renew if possible
+        const meR = await apiFetch("/users/me", {}, {retryOn401:false});
+        if(meR.ok){ const me = await meR.json(); setAuthedUI(true, me?.data?.email||""); await syncExpiryFromServer(); await loadCollections(); }
+        else setAuthedUI(false);
+      }catch(e){ setAuthedUI(false); }
+    })();
   </script>
 </body>
 </html>
