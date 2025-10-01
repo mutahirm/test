@@ -1,110 +1,153 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Directus Portal · Login & Fetch</title>
-
-  <!-- Tailwind CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            ink:   { 50:'#f6f7f9',100:'#eceef3',200:'#d7dbe7',300:'#b7bfd3',400:'#8f9ab7',500:'#6b7aa0',600:'#54618a',700:'#424d71',800:'#38415d',900:'#2f374f',950:'#1b2030' },
-            mint:  { 50:'#f2fbf7',100:'#d2f5e4',200:'#a7ebcd',300:'#74ddb3',400:'#47cfa0',500:'#22be8b',600:'#169e74',700:'#147d60',800:'#13634f',900:'#114f41' }
-          },
-          boxShadow: {
-            card: '0 10px 30px -10px rgba(15,23,42,.35)'
-          }
-        }
-      },
-      darkMode: 'class'
-    };
-  </script>
-
-  <!-- App styles -->
+  <meta charset="UTF-8" />
+  <title>Directus Session Auth — Auto Refresh</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    /* smooth fade on view switches */
-    .fade-in { animation: fade .25s ease-out both; }
-    @keyframes fade { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
-    /* monospace prettify */
-    pre { tab-size: 2; }
+    body { font: 14px/1.5 system-ui, sans-serif; max-width: 720px; margin: 40px auto; }
+    form, .row { margin: 12px 0; }
+    input { padding: 8px; margin-right: 6px; }
+    button { padding: 8px 12px; }
+    pre { background: #111; color: #eee; padding: 12px; border-radius: 8px; overflow: auto; }
+    .hidden { display: none; }
   </style>
 </head>
-<body class="min-h-screen bg-ink-50 text-ink-900 dark:bg-ink-950 dark:text-ink-50">
-  <div class="absolute right-4 top-4">
-    <button id="themeToggle" class="rounded-full border border-ink-300 dark:border-ink-700 p-2 text-ink-600 dark:text-ink-300 hover:bg-ink-100 dark:hover:bg-ink-900 transition">
-      <span class="sr-only">Toggle theme</span>
-      <!-- sun/moon -->
-      <svg id="sun" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 block dark:hidden" viewBox="0 0 24 24" fill="currentColor"><path d="M6.76 4.84l-1.8-1.79-1.42 1.41 1.79 1.8 1.43-1.42zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zM4.34 19.66l1.41 1.41 1.8-1.79-1.42-1.42-1.79 1.8zM20 11v2h3v-2h-3zm-2.34-7.95l-1.42 1.42 1.8 1.79 1.41-1.41-1.79-1.8zM17.24 19.16l1.79 1.8 1.42-1.41-1.8-1.79-1.41 1.4zM12 6a6 6 0 100 12A6 6 0 0012 6z"/></svg>
-      <svg id="moon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 hidden dark:block" viewBox="0 0 24 24" fill="currentColor"><path d="M20.742 13.045A8 8 0 1111 3a7 7 0 109.742 10.045z"/></svg>
-    </button>
+<body>
+  <h1>Directus Login + Auto-Refresh Demo</h1>
+
+  <div id="status">Initializing…</div>
+
+  <form id="loginForm" class="hidden">
+    <input type="email" id="email" placeholder="Email" autocomplete="username" required />
+    <input type="password" id="password" placeholder="Password" autocomplete="current-password" required />
+    <button type="submit">Login</button>
+  </form>
+
+  <div class="row">
+    <button id="loadData" disabled>Load “test” Collection</button>
+    <button id="whoami" disabled>Who am I?</button>
+    <button id="logout" disabled>Logout</button>
   </div>
 
-  <main class="mx-auto max-w-3xl px-6 py-14">
-    <header class="mb-8 fade-in">
-      <h1 class="text-2xl md:text-3xl font-semibold tracking-tight">Directus Session Auth</h1>
-      <p class="text-ink-600 dark:text-ink-300 mt-1">Login with <em>session</em> mode, auto-refresh, then fetch from <code class="px-1.5 py-0.5 rounded bg-ink-200/50 dark:bg-ink-800/60">items/test</code>.</p>
-    </header>
-
-    <!-- Card -->
-    <section class="rounded-2xl bg-white/70 dark:bg-ink-900/70 shadow-card ring-1 ring-ink-200/70 dark:ring-ink-800/60 overflow-hidden fade-in">
-      <!-- status bar -->
-      <div id="status"
-           class="flex items-center gap-2 px-5 py-3 text-sm bg-ink-100/70 dark:bg-ink-900/60 text-ink-700 dark:text-ink-300">
-        <span class="inline-block h-2.5 w-2.5 rounded-full bg-ink-400 animate-pulse"></span>
-        <span>Initializing…</span>
-      </div>
-
-      <!-- body -->
-      <div class="p-5 md:p-7 grid gap-6">
-        <!-- login form -->
-        <form id="loginForm" class="grid gap-3 md:grid-cols-[1fr_1fr_auto] items-end hidden">
-          <label class="grid gap-1">
-            <span class="text-sm text-ink-600 dark:text-ink-300">Email</span>
-            <input type="email" id="email" autocomplete="username"
-                   class="rounded-xl border-ink-300 dark:border-ink-700 bg-white/80 dark:bg-ink-950 px-3 py-2 border focus:outline-none focus:ring-4 ring-mint-300/60 dark:ring-mint-500/20"
-                   placeholder="you@company.com" required />
-          </label>
-          <label class="grid gap-1">
-            <span class="text-sm text-ink-600 dark:text-ink-300">Password</span>
-            <input type="password" id="password" autocomplete="current-password"
-                   class="rounded-xl border-ink-300 dark:border-ink-700 bg-white/80 dark:bg-ink-950 px-3 py-2 border focus:outline-none focus:ring-4 ring-mint-300/60 dark:ring-mint-500/20"
-                   placeholder="••••••••" required />
-          </label>
-          <button type="submit"
-                  class="rounded-xl bg-mint-600 hover:bg-mint-700 active:bg-mint-800 text-white px-5 py-2.5 font-medium transition focus:outline-none focus:ring-4 ring-mint-400/50">
-            Sign in
-          </button>
-        </form>
-
-        <!-- actions -->
-        <div class="flex flex-wrap gap-3">
-          <button id="loadData"
-                  class="rounded-xl bg-ink-900/90 dark:bg-ink-800 hover:bg-ink-900 text-white px-4 py-2 font-medium disabled:opacity-40 disabled:cursor-not-allowed transition focus:outline-none focus:ring-4 ring-ink-400/40"
-                  disabled>Load “test”</button>
-          <button id="whoami"
-                  class="rounded-xl border border-ink-300 dark:border-ink-700 text-ink-800 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-800 px-4 py-2 font-medium disabled:opacity-40 disabled:cursor-not-allowed transition focus:outline-none focus:ring-4 ring-ink-400/30"
-                  disabled>Who am I?</button>
-          <button id="logout"
-                  class="rounded-xl border border-red-200/70 text-red-700 dark:text-red-300 hover:bg-red-50/50 dark:hover:bg-red-900/30 px-4 py-2 font-medium disabled:opacity-40 disabled:cursor-not-allowed transition focus:outline-none focus:ring-4 ring-red-300/30"
-                  disabled>Logout</button>
-        </div>
-
-        <!-- output -->
-        <pre id="output" class="rounded-xl bg-ink-900 text-ink-100 p-4 text-sm overflow-auto min-h-[160px]"></pre>
-      </div>
-    </section>
-  </main>
+  <pre id="output"></pre>
 
   <script>
-    // ==== CONFIG ============================================================
     const API = "https://test.mutahirmasood.com/api"; // same-origin mount of Directus
-    // =======================================================================
 
-    // Theme toggle (remember preference)
-    const root = document.documentElement;
-    (function initTheme(){
-      const pref = localStorage.getItem("theme") || (window.matchMedia('(prefers-color-scheme: dark)').matches ? '
+    // Helper: POST /auth/refresh (session mode)
+    async function refreshSession() {
+      const r = await fetch(`${API}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ mode: "session" })
+      });
+      return r.ok;
+    }
+
+    // Helper: generic fetch that auto-refreshes once on 401
+    async function apiFetch(path, init = {}, { retryOn401 = true } = {}) {
+      const res = await fetch(`${API}${path}`, { credentials: "include", ...init });
+      if (res.status === 401 && retryOn401) {
+        const ok = await refreshSession();
+        if (ok) {
+          return fetch(`${API}${path}`, { credentials: "include", ...init, });
+        }
+      }
+      return res;
+    }
+
+    // UI helpers
+    const $ = (id) => document.getElementById(id);
+    function setAuthedUI(enabled, meInfo = "") {
+      $("loadData").disabled = !enabled;
+      $("whoami").disabled  = !enabled;
+      $("logout").disabled  = !enabled;
+      $("loginForm").classList.toggle("hidden", enabled);
+      $("status").textContent = enabled ? `Signed in${meInfo ? " — " + meInfo : ""}` : "Please log in.";
+    }
+    function show(obj) { $("output").textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2); }
+
+    // On load: silently refresh, then /users/me
+    (async () => {
+      try {
+        await refreshSession(); // ok if it fails; we'll check /users/me next
+        const meRes = await apiFetch("/users/me", { method: "GET" }, { retryOn401: false });
+        if (meRes.ok) {
+          const me = await meRes.json();
+          setAuthedUI(true, me?.data?.email || "");
+        } else {
+          setAuthedUI(false);
+        }
+      } catch (e) {
+        setAuthedUI(false);
+        show(String(e));
+      }
+    })();
+
+    // Login handler
+    $("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      show("Logging in…");
+      const email = $("email").value.trim();
+      const password = $("password").value;
+
+      const res = await fetch(`${API}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email, password, mode: "session" })
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        show(`Login failed: ${res.status}\n${err}`);
+        return;
+      }
+
+      // After login, fetch /users/me to confirm
+      const meRes = await apiFetch("/users/me");
+      if (meRes.ok) {
+        const me = await meRes.json();
+        setAuthedUI(true, me?.data?.email || "");
+        show("Login successful.");
+      } else {
+        setAuthedUI(false);
+        show(`Login returned but /users/me failed: ${meRes.status}`);
+      }
+    });
+
+    // Load collection "test"
+    $("loadData").addEventListener("click", async () => {
+      show("Loading collection…");
+      const res = await apiFetch("/items/test");
+      if (!res.ok) return show(`Fetch failed: ${res.status}\n${await res.text()}`);
+      show(await res.json());
+    });
+
+    // Who am I?
+    $("whoami").addEventListener("click", async () => {
+      const res = await apiFetch("/users/me");
+      if (!res.ok) return show(`WhoAmI failed: ${res.status}\n${await res.text()}`);
+      show(await res.json());
+    });
+
+    // Logout
+    $("logout").addEventListener("click", async () => {
+      const res = await fetch(`${API}/auth/logout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ mode: "session" })
+      });
+      if (res.ok) {
+        setAuthedUI(false);
+        show("Logged out.");
+      } else {
+        show(`Logout failed: ${res.status}\n${await res.text()}`);
+      }
+    });
+  </script>
+</body>
+</html>
