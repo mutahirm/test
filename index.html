@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Directus Session Auth Demo</title>
+</head>
+<body>
+  <h1>Login + Fetch from "test" Collection</h1>
+
+  <form id="loginForm">
+    <input type="email" id="email" placeholder="Email" required />
+    <input type="password" id="password" placeholder="Password" required />
+    <button type="submit">Login</button>
+  </form>
+
+  <button id="loadData" disabled>Load Test Collection</button>
+  <pre id="output"></pre>
+
+  <script>
+    const directusUrl = "https://test.mutahirmasood.com/api"; 
+
+    // handle login
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+
+      const res = await fetch(`${directusUrl}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",  // crucial for cookie-based session
+        body: JSON.stringify({ email, password, mode: "session" })
+      });
+
+      if (res.ok) {
+        document.getElementById("output").textContent = "Login successful!";
+        document.getElementById("loadData").disabled = false;
+      } else {
+        const err = await res.text();
+        document.getElementById("output").textContent = `Login failed: ${res.status}\n${err}`;
+      }
+    });
+
+    // fetch data from "test" collection
+    document.getElementById("loadData").addEventListener("click", async () => {
+      const res = await fetch(`${directusUrl}/items/test`, {
+        credentials: "include"
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        document.getElementById("output").textContent = `Fetch failed: ${res.status}\n${err}`;
+        return;
+      }
+      const data = await res.json();
+      document.getElementById("output").textContent = JSON.stringify(data, null, 2);
+    });
+  </script>
+</body>
+</html>
