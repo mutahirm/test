@@ -2,19 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Directus GraphQL Realtime (Session Cookie)</title>
+  <title>Directus Realtime (Session Cookie + GraphQL WS)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { color-scheme: light dark; }
-    body { font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem; }
-    .card { max-width: 840px; border: 1px solid #ccc; border-radius: 12px; padding: 16px; }
-    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-    input, button { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #bbb; }
-    button.primary { background: #0a7; color: white; border: none; }
-    code, pre { background: color-mix(in srgb, CanvasText 10%, Canvas); padding: 2px 6px; border-radius: 6px; }
-    #log { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; max-height: 320px; overflow: auto; border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
+    body { font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
+    .card { max-width: 920px; border: 1px solid #d0d0d0; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    input, button, select, textarea { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #bbb; }
+    button.primary { background: #0a7; color: #fff; border: none; }
+    code, pre, textarea { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    #log { white-space: pre-wrap; max-height: 360px; overflow: auto; border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
     .ok { color: #0a7; } .err { color: #c33; }
-    .mut { padding: 8px; border-bottom: 1px dashed #ddd; }
+    .mut { padding: 8px 0; border-bottom: 1px dashed #ddd; }
+    .kbd { padding: 1px 6px; border: 1px solid #bbb; border-bottom-width: 2px; border-radius: 6px; background: #f7f7f7; }
   </style>
 </head>
 <body>
@@ -24,16 +25,11 @@
     <p><strong>Config</strong> (pre-filled):</p>
     <ul>
       <li><code>DIRECTUS_URL</code>: <span id="cfg-url"></span></li>
+      <li><code>WS_PATH</code>: <span id="cfg-ws"></span></li>
       <li><code>COLLECTION</code>: <span id="cfg-col"></span></li>
     </ul>
-    <p>Notes:</p>
-    <ul>
-      <li>If this page is on a different domain than Directus, set cookie flags to <code>SameSite=None; Secure</code> and a shared cookie domain (e.g., <code>.mutahirmasood.com</code>).</li>
-      <li>Role permissions still govern what comes through the subscription.</li>
-    </ul>
+    <p>Tip: If this page is on a different origin than Directus, your session cookie must be set with <code>SameSite=None; Secure</code> and a shared cookie domain (e.g., <code>.mutahirmasood.com</code>).</p>
   </div>
-
-  <br />
 
   <div class="card">
     <h2>1) Login (sets HttpOnly session cookie)</h2>
@@ -47,21 +43,19 @@
     <p id="auth-status">Status: <em>not checked</em></p>
   </div>
 
-  <br />
-
   <div class="card">
     <h2>2) Subscribe</h2>
     <div class="row">
       <button id="btn-connect" class="primary">Connect & Subscribe</button>
       <button id="btn-disconnect">Disconnect</button>
     </div>
-    <p>Subscription query (you can edit it):</p>
-    <textarea id="gql" rows="8" style="width:100%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;">
+    <p>Subscription query (edit if you want):</p>
+    <textarea id="gql" rows="10" style="width:100%;">
 subscription OnItems($event: MutationEvent) {
   test_mutated(event: $event) {
-    event
-    key
-    data {
+    event          # create | update | delete
+    key            # item id as string
+    data {         # data on create/update
       id
       title
       status
@@ -81,44 +75,35 @@ subscription OnItems($event: MutationEvent) {
     </div>
   </div>
 
-  <br />
-
   <div class="card">
     <h2>Events</h2>
     <div id="events"></div>
   </div>
 
-  <br />
-
   <div class="card">
     <h2>Log</h2>
     <div id="log"></div>
+    <p>Open DevTools → Network → WS to inspect the handshake; note the <span class="kbd">Sec-WebSocket-Protocol</span>, <span class="kbd">Upgrade</span>, and <span class="kbd">Set-Cookie</span> behavior.</p>
   </div>
 
   <script>
-    // ======== CONFIG (pre-filled) ========
-    const DIRECTUS_URL = "https://test.mutahirmasood.com/api";
+    // ======== CONFIG (your project) ========
+    const DIRECTUS_URL = "https://test.mutahirmasood.com";
+    const WS_PATH      = "/api/graphql";   // Directus behind /api
     const COLLECTION   = "test";
-    // =====================================
+    // =======================================
 
-    // Basic helpers
+    // Helpers
     const $$ = (sel) => document.querySelector(sel);
-    const log = (msg, cls="") => {
-      const el = document.createElement("div");
-      el.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
-      if (cls) el.className = cls;
-      $$("#log").prepend(el);
-    };
-    const showStatus = (ok, text) => {
-      $$("#auth-status").innerHTML = ok
-        ? `<span class="ok">✅ ${text}</span>` : `<span class="err">⛔ ${text}</span>`;
-    };
+    const log = (msg, cls="") => { const el=document.createElement("div"); el.innerText=`[${new Date().toLocaleTimeString()}] ${msg}`; if(cls) el.className=cls; $$("#log").prepend(el); };
+    const showStatus = (ok, text) => $$("#auth-status").innerHTML = ok ? `<span class="ok">✅ ${text}</span>` : `<span class="err">⛔ ${text}</span>`;
 
-    // Initial UI wiring
+    // Wire config labels
     $$("#cfg-url").textContent = DIRECTUS_URL;
+    $$("#cfg-ws").textContent  = WS_PATH;
     $$("#cfg-col").textContent = COLLECTION;
 
-    // --- Auth flows (session cookie) ---
+    // --- Auth (session cookie) ---
     async function login(email, password) {
       const res = await fetch(`${DIRECTUS_URL}/auth/login`, {
         method: "POST",
@@ -127,11 +112,11 @@ subscription OnItems($event: MutationEvent) {
         body: JSON.stringify({ email, password })
       });
       if (!res.ok) {
-        const err = await safeJson(res);
-        throw new Error(`Login failed: ${res.status} ${res.statusText} ${err?.errors?.[0]?.message || ""}`);
+        let msg = `Login failed: ${res.status} ${res.statusText}`;
+        try { const j = await res.json(); msg += ` — ${j?.errors?.[0]?.message || ""}`; } catch {}
+        throw new Error(msg);
       }
       log("Logged in; session cookie should be set.", "ok");
-      return res.json().catch(() => ({}));
     }
 
     async function logout() {
@@ -141,46 +126,45 @@ subscription OnItems($event: MutationEvent) {
 
     async function usersMe() {
       const res = await fetch(`${DIRECTUS_URL}/users/me`, { credentials: "include" });
-      if (!res.ok) {
-        showStatus(false, "Not authenticated");
-        throw new Error(`users/me: ${res.status} ${res.statusText}`);
-      }
+      if (!res.ok) { showStatus(false, "Not authenticated"); throw new Error(`/users/me failed: ${res.status}`); }
       const me = await res.json();
       showStatus(true, `Authenticated as ${me?.data?.email || me?.data?.id || "unknown user"}`);
       log("users/me succeeded.", "ok");
       return me;
     }
 
-    async function safeJson(res) {
-      try { return await res.json(); } catch { return null; }
-    }
-
-    // --- GraphQL over WebSocket (graphql-transport-ws) ---
-    let socket, subId = 0, connected = false, keepAliveTimer;
+    // --- GraphQL over WebSocket ---
+    let socket, keepAliveTimer, connected = false, subId = 0;
 
     function wsUrl() {
-      const http = DIRECTUS_URL.startsWith("https://") ? "wss://" : "ws://";
-      return DIRECTUS_URL.replace(/^https?:\/\//, http) + "/graphql";
+      const scheme = DIRECTUS_URL.startsWith("https://") ? "wss://" : "ws://";
+      const base   = DIRECTUS_URL.replace(/^https?:\/\//, "");
+      return `${scheme}${base}${WS_PATH}`;
     }
 
-    function connectAndSubscribe() {
-      if (connected) { log("Already connected."); return; }
+    async function connectAndSubscribe() {
+      // prove cookie is good before WS
+      try { await usersMe(); } catch { log("Not logged in (or cookie not sent). Login first.", "err"); return; }
 
-      log("Opening WebSocket to " + wsUrl());
-      socket = new WebSocket(wsUrl(), "graphql-transport-ws");
+      if (connected) { log("Already connected."); return; }
+      const url = wsUrl();
+      log("Opening WebSocket to " + url);
+
+      // Offer both protocols; server will pick what it supports
+      socket = new WebSocket(url, ["graphql-transport-ws", "graphql-ws"]);
 
       socket.onopen = () => {
         connected = true;
         log("WS open. Sending connection_init…");
-        // No access token; we rely on the browser to attach the session cookie during the handshake
+        // No token here—session cookie rides on the handshake automatically
         socket.send(JSON.stringify({ type: "connection_init" }));
-        keepAliveTimer = setInterval(() => {
-          try { socket.send(JSON.stringify({ type: "ping" })); } catch {}
-        }, 30000);
+        // keep-alive (useful behind certain proxies)
+        keepAliveTimer = setInterval(() => { try { socket.send(JSON.stringify({ type: "ping" })); } catch {} }, 30000);
       };
 
       socket.onmessage = (ev) => {
-        const msg = JSON.parse(ev.data);
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch { log("Non-JSON WS message: " + ev.data); return; }
         switch (msg.type) {
           case "connection_ack":
             log("connection_ack received. Subscribing…", "ok");
@@ -190,60 +174,53 @@ subscription OnItems($event: MutationEvent) {
             onNext(msg);
             break;
           case "error":
-            log("Error: " + JSON.stringify(msg.payload), "err");
-            break;
-          case "complete":
-            log(`Subscription ${msg.id} complete.`);
+            log("GraphQL error: " + JSON.stringify(msg.payload), "err");
             break;
           case "ping":
             socket.send(JSON.stringify({ type: "pong" }));
             break;
-          default:
+          case "complete":
+            log(`Subscription ${msg.id} complete.`);
             break;
+          default:
+            // ignore
         }
       };
 
-      socket.onerror = () => log("WS error (see console).", "err");
-      socket.onclose = () => {
+      socket.onerror = () => log("WS error (check DevTools > Network > WS).", "err");
+      socket.onclose = (e) => {
         connected = false;
         clearInterval(keepAliveTimer);
-        log("WS closed.");
+        log(`WS closed (code=${e.code}, reason="${e.reason}")`);
       };
     }
 
     function startSubscription() {
       const id = String(++subId);
       const query = $$("#gql").value;
-      const event = $$("#eventFilter").value || null;
-
-      const payload = {
-        query,
-        variables: { event } // $event: MutationEvent
-      };
-
+      const event = $$("#eventFilter").value || null; // MutationEvent | null
+      const payload = { query, variables: { event } };
       socket.send(JSON.stringify({ id, type: "subscribe", payload }));
       log(`Subscribed with id=${id}.`);
     }
 
     function onNext(msg) {
-      const data = msg?.payload?.data;
-      const evRoot = data?.[`${COLLECTION}_mutated`];
-      const ev = evRoot || data;
-
+      const root = msg?.payload?.data?.[`${COLLECTION}_mutated`];
       const wrap = document.createElement("div");
       wrap.className = "mut";
       wrap.innerHTML = `
-        <div><strong>event:</strong> ${ev?.event}</div>
-        <div><strong>key:</strong> ${ev?.key}</div>
-        <div><strong>data:</strong> <pre>${syntaxHighlight(ev?.data)}</pre></div>
+        <div><strong>event:</strong> ${root?.event}</div>
+        <div><strong>key:</strong> ${root?.key}</div>
+        <div><strong>data:</strong> <pre>${syntaxHighlight(root?.data)}</pre></div>
       `;
       $$("#events").prepend(wrap);
     }
 
     function syntaxHighlight(obj) {
       const json = JSON.stringify(obj, null, 2);
+      if (!json) return "";
       return json
-        .replace(/(&|<|>)/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[s]))
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
         .replace(/"(.*?)":/g, '<span style="color:#6a5acd">"$1"</span>:')
         .replace(/\b(true|false|null)\b/g, '<span style="color:#c33">$1</span>')
         .replace(/\b(\d+)\b/g, '<span style="color:#0a7">$1</span>');
@@ -266,10 +243,7 @@ subscription OnItems($event: MutationEvent) {
         if (!email || !password) { alert("Enter email and password."); return; }
         await login(email, password);
         await usersMe();
-      } catch (e) {
-        showStatus(false, "Login failed");
-        log(String(e), "err");
-      }
+      } catch (e) { showStatus(false, "Login failed"); log(String(e), "err"); }
     });
 
     $$("#btn-logout").addEventListener("click", async () => {
@@ -280,13 +254,8 @@ subscription OnItems($event: MutationEvent) {
       try { await usersMe(); } catch (e) { log(String(e), "err"); }
     });
 
-    $$("#btn-connect").addEventListener("click", () => {
-      connectAndSubscribe();
-    });
-
-    $$("#btn-disconnect").addEventListener("click", () => {
-      disconnect();
-    });
+    $$("#btn-connect").addEventListener("click", () => connectAndSubscribe());
+    $$("#btn-disconnect").addEventListener("click", () => disconnect());
   </script>
 </body>
 </html>
