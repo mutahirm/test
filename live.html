@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Directus GraphQL Realtime (Session Cookie)</title>
+  <title>Directus Realtime (Session Cookie, WebSocket)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { color-scheme: light dark; }
@@ -18,12 +18,13 @@
   </style>
 </head>
 <body>
-  <h1>Directus Realtime via GraphQL Subscriptions (Session Cookie)</h1>
+  <h1>Directus Realtime via WebSocket (Session Cookie)</h1>
 
   <div class="card">
     <p><strong>Config</strong> (pre-filled):</p>
     <ul>
       <li><code>DIRECTUS_URL</code>: <span id="cfg-url"></span></li>
+      <li><code>WS_URL</code>: <span id="cfg-ws"></span></li>
       <li><code>COLLECTION</code>: <span id="cfg-col"></span></li>
     </ul>
     <p>Notes:</p>
@@ -50,26 +51,18 @@
   <br />
 
   <div class="card">
-    <h2>2) Subscribe</h2>
+    <h2>2) Subscribe (WebSocket)</h2>
     <div class="row">
       <button id="btn-connect" class="primary">Connect & Subscribe</button>
       <button id="btn-disconnect">Disconnect</button>
     </div>
-    <p>Subscription query (you can edit it):</p>
-    <textarea id="gql" rows="8" style="width:100%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;">
-subscription OnItems($event: MutationEvent) {
-  test_mutated(event: $event) {
-    event
-    key
-    data {
-      id
-      title
-      status
-      date_created
-    }
-  }
-}
+
+    <!-- Kept for reference; ignored in WS mode -->
+    <p style="margin-top:12px"><em>Note:</em> GraphQL textarea is ignored in WebSocket mode.</p>
+    <textarea id="gql" rows="6" style="width:100%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;" disabled>
+(subscription UI placeholder — not used with /websocket)
     </textarea>
+
     <div class="row" style="margin-top:8px;">
       <label for="eventFilter">Event filter:</label>
       <select id="eventFilter">
@@ -97,7 +90,8 @@ subscription OnItems($event: MutationEvent) {
 
   <script>
     // ======== CONFIG (pre-filled) ========
-    const DIRECTUS_URL = "https://test.mutahirmasood.com/api";
+    const DIRECTUS_URL = "https://test.mutahirmasood.com/api";      // REST base (login/users)
+    const WS_URL       = "wss://test.mutahirmasood.com/api/websocket"; // HARD-CODED WS endpoint
     const COLLECTION   = "test";
     // =====================================
 
@@ -116,6 +110,7 @@ subscription OnItems($event: MutationEvent) {
 
     // Initial UI wiring
     $$("#cfg-url").textContent = DIRECTUS_URL;
+    $$("#cfg-ws").textContent = WS_URL;
     $$("#cfg-col").textContent = COLLECTION;
 
     // --- Auth flows (session cookie) ---
@@ -155,87 +150,81 @@ subscription OnItems($event: MutationEvent) {
       try { return await res.json(); } catch { return null; }
     }
 
-    // --- GraphQL over WebSocket (graphql-transport-ws) ---
-    let socket, subId = 0, connected = false, keepAliveTimer;
-
-    function wsUrl() {
-      const http = DIRECTUS_URL.startsWith("https://") ? "wss://" : "ws://";
-      return DIRECTUS_URL.replace(/^https?:\/\//, http) + "/graphql";
-    }
+    // --- Directus Realtime over WebSocket (/websocket) ---
+    let socket, connected = false, uid = null;
 
     function connectAndSubscribe() {
       if (connected) { log("Already connected."); return; }
 
-      log("Opening WebSocket to " + wsUrl());
-      socket = new WebSocket(wsUrl(), "graphql-transport-ws");
+      log("Opening WebSocket to " + WS_URL);
+      socket = new WebSocket(WS_URL); // no subprotocol for Directus WS
 
       socket.onopen = () => {
         connected = true;
-        log("WS open. Sending connection_init…");
-        // No access token; we rely on the browser to attach the session cookie during the handshake
-        socket.send(JSON.stringify({ type: "connection_init" }));
-        keepAliveTimer = setInterval(() => {
-          try { socket.send(JSON.stringify({ type: "ping" })); } catch {}
-        }, 30000);
+        uid = crypto.randomUUID();
+        log("WS open. Subscribing…");
+
+        // Build subscription payload
+        const event = $$("#eventFilter").value || undefined; // create | update | delete | undefined
+        const payload = {
+          type: "subscribe",
+          collection: COLLECTION,
+          uid,
+          ...(event ? { event } : {}),
+          // Optional: request specific fields
+          // query: { fields: ["id", "title", "status", "date_created"] }
+        };
+
+        socket.send(JSON.stringify(payload));
       };
 
       socket.onmessage = (ev) => {
-        const msg = JSON.parse(ev.data);
-        switch (msg.type) {
-          case "connection_ack":
-            log("connection_ack received. Subscribing…", "ok");
-            startSubscription();
-            break;
-          case "next":
-            onNext(msg);
-            break;
-          case "error":
-            log("Error: " + JSON.stringify(msg.payload), "err");
-            break;
-          case "complete":
-            log(`Subscription ${msg.id} complete.`);
-            break;
-          case "ping":
-            socket.send(JSON.stringify({ type: "pong" }));
-            break;
-          default:
-            break;
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch { return; }
+
+        // Handle pings from server
+        if (msg?.type === "ping") {
+          try { socket.send(JSON.stringify({ type: "pong" })); } catch {}
+          return;
+        }
+
+        // Subscription initialized
+        if (msg?.type === "subscription" && msg?.event === "init") {
+          log(`Subscription acknowledged (uid=${uid}).`, "ok");
+          return;
+        }
+
+        // Subscription events: create/update/delete
+        if (msg?.type === "subscription" && ["create","update","delete"].includes(msg?.event)) {
+          onSubscriptionEvent(msg);
+          return;
+        }
+
+        // Any other messages (errors, etc)
+        if (msg?.type === "error") {
+          log(`WS error: ${JSON.stringify(msg)}`, "err");
+          return;
         }
       };
 
       socket.onerror = () => log("WS error (see console).", "err");
+
       socket.onclose = () => {
         connected = false;
-        clearInterval(keepAliveTimer);
         log("WS closed.");
       };
     }
 
-    function startSubscription() {
-      const id = String(++subId);
-      const query = $$("#gql").value;
-      const event = $$("#eventFilter").value || null;
-
-      const payload = {
-        query,
-        variables: { event } // $event: MutationEvent
-      };
-
-      socket.send(JSON.stringify({ id, type: "subscribe", payload }));
-      log(`Subscribed with id=${id}.`);
-    }
-
-    function onNext(msg) {
-      const data = msg?.payload?.data;
-      const evRoot = data?.[`${COLLECTION}_mutated`];
-      const ev = evRoot || data;
-
+    function onSubscriptionEvent(msg) {
       const wrap = document.createElement("div");
       wrap.className = "mut";
+
+      // data may be array (create/update) or id-only for delete
+      const dataPretty = syntaxHighlight(msg?.data ?? msg?.key ?? msg ?? null);
       wrap.innerHTML = `
-        <div><strong>event:</strong> ${ev?.event}</div>
-        <div><strong>key:</strong> ${ev?.key}</div>
-        <div><strong>data:</strong> <pre>${syntaxHighlight(ev?.data)}</pre></div>
+        <div><strong>event:</strong> ${msg?.event}</div>
+        <div><strong>uid:</strong> ${msg?.uid || uid || "-"}</div>
+        <div><strong>data:</strong> <pre>${dataPretty}</pre></div>
       `;
       $$("#events").prepend(wrap);
     }
@@ -251,10 +240,15 @@ subscription OnItems($event: MutationEvent) {
 
     function disconnect() {
       if (!socket) return;
+      try {
+        // Try to unsubscribe this connection before closing
+        if (uid && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: "unsubscribe", uid }));
+        }
+      } catch {}
       try { socket.close(1000, "client close"); } catch {}
       socket = null;
       connected = false;
-      clearInterval(keepAliveTimer);
       log("Disconnected.");
     }
 
