@@ -5,7 +5,7 @@
   <title>Directus Portal Demo — Realtime + 24h Timer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Tailwind CDN (demo-friendly) -->
+  <!-- Tailwind CDN (demo-friendly). For prod, build Tailwind with CLI/PostCSS. -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -140,7 +140,7 @@
       rest,
       realtime,
       authentication
-    } from 'https://cdn.jsdelivr.net/npm/@directus/sdk@latest/dist/index.min.js';
+    } from 'https://unpkg.com/@directus/sdk@latest/dist/index.js';
 
     // SDK client: cookie-session auth + REST + Realtime
     const client = createDirectus(API_BASE)
@@ -267,9 +267,10 @@
       return r.ok ? r.json() : null;
     }
 
-    /***** REALTIME (SDK) *****/
-    let realtimeConnected = false;
+    /***** REALTIME (SDK — new API) *****/
+    let wsConnected = false;
     const testCache = new Map(); // id -> item
+    let testSubscription = null; // keep a handle if you want to stop later
 
     function renderList() {
       const $list = $("testList");
@@ -303,43 +304,49 @@
     }
 
     async function startRealtime() {
-      if (realtimeConnected) return;
+      if (!wsConnected) {
+        await client.connect(); // unified connect (was client.realtime.connect())
+        wsConnected = true;
+      }
 
-      await client.realtime.connect(); // cookie-session; SDK performs handshake under the hood
-      realtimeConnected = true;
+      // Subscribe to items.test changes
+      const { subscription } = await client.subscribe('items.test', {
+        event: true,                  // all events; or 'create' | 'update' | 'delete'
+        query: { fields: ['*'] }      // trim fields if desired
+      });
+      testSubscription = subscription;
 
-      // Subscribe per docs to collection changes
-      const unsubscribe = await client.realtime.subscribe(
-        "items.test",
-        { event: true, query: { fields: ["*"] } },
-        (payload) => {
+      // Async iterator over messages
+      (async () => {
+        for await (const payload of subscription) {
           const { event, data } = payload;
 
-          if (event === "create" || event === "update") {
+          if (event === 'create' || event === 'update') {
             const rows = Array.isArray(data) ? data : [data];
             for (const row of rows) testCache.set(row.id, row);
-          } else if (event === "delete") {
+          } else if (event === 'delete') {
             const ids = Array.isArray(data) ? data : [data];
             for (const id of ids) testCache.delete(id);
           }
 
           renderList();
 
-          // Append a log line
           const out = $("output");
           const msg = `[${new Date().toLocaleTimeString()}] ${event.toUpperCase()} → ${JSON.stringify(data)}`;
-          out.textContent = `${msg}\n` + out.textContent;
+          out.textContent = `${msg}
+` + out.textContent;
         }
-      );
+      })();
 
-      // Expose for manual stop if needed
-      window.unsubscribeTest = unsubscribe;
-
-      // Seed initial state after subscription so UI snaps to now
+      // Seed current state after subscribing so UI snaps to now
       await seedTest();
     }
-    // expose for manual calls if needed
-    window.startRealtime = startRealtime;
+
+    // Optional: expose a stop function
+    window.stopRealtime = async () => {
+      try { if (testSubscription && testSubscription.return) await testSubscription.return(); } catch {}
+      testSubscription = null;
+    };
 
     /***** INIT: refresh → me → UI + restore timer → realtime *****/
     (async () => {
@@ -380,7 +387,8 @@
 
       if (!res.ok) {
         const err = await res.text();
-        show(`Login failed: ${res.status}\n${err}`);
+        show(`Login failed: ${res.status}
+${err}`);
         return;
       }
 
@@ -413,7 +421,8 @@
     // Who am I
     $("whoami").addEventListener("click", async () => {
       const res = await apiFetch("/users/me");
-      if (!res.ok) return show(`WhoAmI failed: ${res.status}\n${await res.text()}`);
+      if (!res.ok) return show(`WhoAmI failed: ${res.status}
+${await res.text()}`);
       show(await res.json());
     });
 
@@ -421,7 +430,8 @@
     $("loadData").addEventListener("click", async () => {
       show("Loading collection…");
       const res = await apiFetch("/items/test?limit=500&fields=*");
-      if (!res.ok) return show(`Fetch failed: ${res.status}\n${await res.text()}`);
+      if (!res.ok) return show(`Fetch failed: ${res.status}
+${await res.text()}`);
       show(await res.json());
     });
 
@@ -439,8 +449,10 @@
       if (res.ok) {
         setAuthedUI(false);
         show("Logged out.");
+        await window.stopRealtime?.();
       } else {
-        show(`Logout failed: ${res.status}\n${await res.text()}`);
+        show(`Logout failed: ${res.status}
+${await res.text()}`);
       }
     });
   </script>
