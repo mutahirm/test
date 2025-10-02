@@ -143,12 +143,11 @@
         $("actions").classList.add("hidden");
         $("logout").classList.add("hidden");
         $("hint").classList.add("hidden");
-        clearCountdown(); // stop and clear 24h counter on logout
+        setSessionExpiryMs(null);
       }
     }
 
-    // ======= ONE-DAY LOGIN COUNTDOWN =======
-    const COUNTDOWN_KEY = "one_day_countdown_end"; // epoch ms
+    // ======= SESSION TIMER =======
     let expiryAtMs = null; // epoch ms
     let tickHandle = null;
 
@@ -165,58 +164,53 @@
       updateCountdown();
     }
 
-    function fmtHMS(totalSeconds) {
-      const h = Math.floor(totalSeconds / 3600);
-      const m = Math.floor((totalSeconds % 3600) / 60);
-      const s = totalSeconds % 60;
-      const HH = String(h).padStart(2, "0");
-      const MM = String(m).padStart(2, "0");
-      const SS = String(s).padStart(2, "0");
-      return `${HH}:${MM}:${SS}`;
-    }
-
     function updateCountdown() {
       if (!expiryAtMs) return;
       const now = Date.now();
       let diff = Math.max(0, Math.floor((expiryAtMs - now) / 1000)); // seconds
 
-      $("sessionTime").textContent = fmtHMS(diff);
+      const mm = String(Math.floor(diff / 60)).padStart(2, "0");
+      const ss = String(diff % 60).padStart(2, "0");
+      $("sessionTime").textContent = `${mm}:${ss}`;
 
       // Color states
       const pill = $("sessionPill");
       pill.className = "tick rounded-full border px-3 py-1.5 text-sm";
-      if (diff <= 5 * 60) {
-        pill.classList.add("border-base-line","bg-red-500/10","text-base-text"); // <= 5m
-      } else if (diff <= 60 * 60) {
-        pill.classList.add("border-base-line","bg-base-warn/10","text-base-text"); // <= 1h
+      if (diff <= 60) {
+        pill.classList.add("border-base-line","bg-red-500/10","text-base-text");
+      } else if (diff <= 5 * 60) {
+        pill.classList.add("border-base-line","bg-base-warn/10","text-base-text");
       } else {
         pill.classList.add("border-base-line","text-base-sub");
       }
-
-      if (diff === 0) {
-        clearCountdown(); // auto-clear when done
-        toast("24-hour timer ended");
-      }
     }
 
-    function startOneDayCountdown() {
-      const end = Date.now() + 24 * 60 * 60 * 1000; // 24h
-      localStorage.setItem(COUNTDOWN_KEY, String(end));
-      setSessionExpiryMs(end);
-    }
+    // Ask Directus for TTL (seconds) then compute absolute expiry.
+    // 1) POST /auth/refresh  -> JSON { data: { access_token, expires (seconds), ... } }
+    // 2) POST /auth/refresh  -> { mode:"session" } to align cookies with the fresh token
+    async function syncExpiryFromServer() {
+      const r = await fetch(`${API}/auth/refresh`, {
+        method: "POST",
+        credentials: "include"
+      });
+      if (!r.ok) return false;
 
-    function restoreCountdownIfPresent() {
-      const raw = localStorage.getItem(COUNTDOWN_KEY);
-      if (!raw) return;
-      const end = Number(raw);
-      if (!Number.isFinite(end)) { localStorage.removeItem(COUNTDOWN_KEY); return; }
-      if (end <= Date.now()) { localStorage.removeItem(COUNTDOWN_KEY); return; }
-      setSessionExpiryMs(end);
-    }
+      const payload = await r.json();
+      let ttl = payload?.data?.expires; // usually number of seconds (e.g. 900)
+      if (typeof ttl === "string" && !Number.isNaN(Number(ttl))) ttl = Number(ttl);
 
-    function clearCountdown() {
-      localStorage.removeItem(COUNTDOWN_KEY);
-      setSessionExpiryMs(null);
+      if (typeof ttl !== "number") return false;
+
+      // Reaffirm cookies for the refreshed token timing
+      await fetch(`${API}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ mode: "session" })
+      });
+
+      setSessionExpiryMs(Date.now() + ttl * 1000);
+      return true;
     }
 
     // ======= AUTH HELPERS =======
@@ -236,6 +230,7 @@
       if (res.status === 401 && retryOn401) {
         const ok = await refreshSession();
         if (ok) {
+          await syncExpiryFromServer();
           res = await fetch(`${API}${path}`, { credentials: "include", ...init });
         }
       }
@@ -247,14 +242,14 @@
       return r.ok ? r.json() : null;
     }
 
-    // ======= INIT: refresh → me → restore countdown (if any) =======
+    // ======= INIT: refresh → me → start timer =======
     (async () => {
       try {
         await refreshSession();            // quietly renew if possible
         const me = await fetchMe();
         if (me?.data) {
           setAuthedUI(true, me.data.email || "");
-          restoreCountdownIfPresent();     // if user already had a running 24h counter
+          await syncExpiryFromServer();    // kick off countdown
         } else {
           setAuthedUI(false);
         }
@@ -294,18 +289,19 @@
         const me = await meRes.json();
         setAuthedUI(true, me?.data?.email || "");
         show("Login successful.");
-        startOneDayCountdown(); // <-- Start the 24h counter on login
+        await syncExpiryFromServer(); // start timer after login
       } else {
         setAuthedUI(false);
         show(`Login returned but /users/me failed: ${meRes.status}`);
       }
     });
 
-    // Manual refresh (does not affect the 24h counter)
+    // Manual refresh
     $("refreshBtn").addEventListener("click", async () => {
       show("Refreshing session…");
       const ok = await refreshSession();
       if (ok) {
+        await syncExpiryFromServer();
         const me = await fetchMe();
         if (me?.data) setAuthedUI(true, me.data.email || "");
         show("Session refreshed.");
