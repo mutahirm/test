@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Directus Portal Demo — Realtime + 24h Timer</title>
+  <title>Directus — Test Collection (Realtime)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Tailwind CDN (demo-friendly) -->
+  <!-- Tailwind (CDN) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -34,207 +34,215 @@
   </script>
   <style>
     .glass { background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); backdrop-filter: blur(10px) saturate(120%); }
+    .pill { transition: all .2s ease; }
+    .mono { font-feature-settings: "calt" 0, "zero" 1; font-variant-numeric: tabular-nums; }
     .btn:disabled { opacity:.5; cursor:not-allowed; }
-    .tick { transition: color .2s ease, background-color .2s ease, border-color .2s ease; }
   </style>
 </head>
 
-<body class="min-h-screen bg-base-bg text-base-text">
-  <div class="max-w-3xl mx-auto px-4 py-10">
+<body class="min-h-screen bg-base-bg text-base-text font-sans">
+  <div class="max-w-6xl mx-auto px-4 py-10">
     <!-- Header -->
-    <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-      <h1 class="text-2xl md:text-3xl font-semibold tracking-tight">Directus Portal</h1>
-
-      <!-- Session indicator -->
+    <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div>
+        <h1 class="text-2xl md:text-3xl font-semibold tracking-tight">Test Collection — Realtime</h1>
+        <p class="text-base-sub text-sm">WebSocket updates via Directus Realtime. Cookie-session auth.</p>
+      </div>
       <div class="flex items-center gap-3">
-        <div id="sessionPill" class="tick rounded-full border px-3 py-1.5 text-sm border-base-line text-base-sub">
-          <span class="opacity-70">Session:</span> <span id="sessionTime">—</span>
-        </div>
-        <button id="logout" class="btn hidden rounded-xl px-4 py-2 bg-base-line/50 hover:bg-base-line text-base-sub hover:text-base-text transition">
-          Logout
-        </button>
+        <span id="connPill" class="pill rounded-full border border-base-line text-base-sub px-3 py-1.5 text-sm">WS: <b id="connState" class="font-medium">—</b></span>
+        <span class="pill rounded-full border border-base-line text-base-sub px-3 py-1.5 text-sm">User: <b id="meEmail" class="font-medium">—</b></span>
+        <button id="logoutBtn" class="btn hidden rounded-xl px-4 py-2 bg-base-line/50 hover:bg-base-line text-base-sub hover:text-base-text transition">Logout</button>
       </div>
     </header>
 
-    <!-- Card -->
-    <section class="mt-8 glass rounded-2xl shadow-soft border border-base-line">
-      <div class="p-6 md:p-8">
-        <!-- Status -->
-        <div id="status" class="text-sm text-base-sub mb-4">Initializing…</div>
-
-        <!-- Login Form -->
-        <form id="loginForm" class="space-y-4">
-          <div class="flex items-center gap-3 text-base-sub">
-            <div class="w-10 h-10 rounded-xl bg-base-line/50 flex items-center justify-center">
-              <!-- lock icon -->
-              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none">
-                <path d="M7 10V8a5 5 0 1 1 10 0v2" stroke="currentColor" stroke-width="1.5"/>
-                <rect x="4" y="10" width="16" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/>
-                <circle cx="12" cy="15" r="1.5" fill="currentColor"/>
-              </svg>
-            </div>
-            <div>
-              <h2 class="text-lg font-medium text-base-text">Sign in</h2>
-              <p class="text-xs">Session cookie mode — secure, no tokens in localStorage.</p>
-            </div>
-          </div>
-
-          <div class="grid md:grid-cols-2 gap-3">
-            <input id="email" type="email" autocomplete="username" placeholder="Email"
-                   class="w-full rounded-xl bg-base-card/60 border border-base-line px-4 py-3 focus:outline-none focus:ring-2 focus:ring-base-brand/60" required />
-            <input id="password" type="password" autocomplete="current-password" placeholder="Password"
-                   class="w-full rounded-xl bg-base-card/60 border border-base-line px-4 py-3 focus:outline-none focus:ring-2 focus:ring-base-brand/60" required />
-          </div>
-
-          <div class="flex items-center gap-3">
-            <button id="loginBtn" type="submit"
-                    class="btn rounded-xl bg-base-brand hover:bg-blue-400 text-black font-medium px-5 py-3 transition">
-              Login
-            </button>
-            <button id="refreshBtn" type="button"
-                    class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-3 text-base-sub hover:text-base-text transition">
-              Refresh Session
-            </button>
-            <span id="hint" class="text-xs text-base-sub hidden">Logged in — try loading data.</span>
-          </div>
-        </form>
-
-        <!-- Actions (authed) -->
-        <div id="actions" class="hidden mt-2">
-          <div class="flex flex-wrap gap-3">
-            <button id="whoami" class="btn rounded-xl bg-base-brand/20 hover:bg-base-brand/30 text-base-text px-4 py-2 transition">Who am I?</button>
-            <button id="loadData" class="btn rounded-xl bg-base-brand2/20 hover:bg-base-brand2/30 text-base-text px-4 py-2 transition">Load “test” Collection</button>
-            <button id="clearOut" class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-2 text-base-sub hover:text-base-text transition">Clear</button>
+    <!-- Controls -->
+    <section class="mt-6 glass rounded-2xl shadow-soft border border-base-line">
+      <div class="p-4 md:p-6 flex flex-col gap-4">
+        <div id="authRow" class="grid md:grid-cols-3 gap-3">
+          <input id="email" type="email" autocomplete="username" placeholder="Email"
+                 class="rounded-xl bg-base-card/60 border border-base-line px-4 py-3 focus:outline-none focus:ring-2 focus:ring-base-brand/60">
+          <input id="password" type="password" autocomplete="current-password" placeholder="Password"
+                 class="rounded-xl bg-base-card/60 border border-base-line px-4 py-3 focus:outline-none focus:ring-2 focus:ring-base-brand/60">
+          <div class="flex gap-2">
+            <button id="loginBtn" class="btn flex-1 rounded-xl bg-base-brand hover:bg-blue-400 text-black font-medium px-5 py-3 transition">Login</button>
+            <button id="refreshBtn" class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-3 text-base-sub hover:text-base-text transition">Refresh</button>
           </div>
         </div>
 
-        <!-- Output -->
-        <div class="mt-6">
-          <pre id="output" class="rounded-xl bg-black/60 border border-base-line p-4 overflow-auto text-sm leading-relaxed"></pre>
+        <div class="flex flex-wrap items-center gap-2">
+          <button id="reloadBtn" class="btn rounded-xl bg-base-brand2/20 hover:bg-base-brand2/30 text-base-text px-4 py-2 transition">Reload Data</button>
+          <button id="pauseBtn"  class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-2 text-base-sub hover:text-base-text transition">Pause Stream</button>
+          <button id="clearBtn"  class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-2 text-base-sub hover:text-base-text transition">Clear Table</button>
+          <span class="ml-auto text-sm text-base-sub">events:
+            <b id="evtCreate" class="mono">0</b> c /
+            <b id="evtUpdate" class="mono">0</b> u /
+            <b id="evtDelete" class="mono">0</b> d
+          </span>
         </div>
+
+        <div id="status" class="text-xs text-base-sub">Status: Initializing…</div>
       </div>
     </section>
 
-    <!-- Toast -->
-    <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 hidden">
-      <div class="rounded-xl bg-white/10 text-base-text px-4 py-2 border border-base-line shadow-soft">
-        <span id="toastMsg" class="text-sm"></span>
+    <!-- Table -->
+    <section class="mt-6 glass rounded-2xl shadow-soft border border-base-line">
+      <div class="px-4 md:px-6 py-4 overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead id="thead" class="text-left text-base-sub border-b border-base-line">
+          </thead>
+          <tbody id="tbody" class="divide-y divide-base-line">
+          </tbody>
+        </table>
+        <div id="empty" class="text-base-sub text-sm py-8 text-center hidden">No data yet.</div>
       </div>
-    </div>
+    </section>
+
+    <!-- Console -->
+    <section class="mt-6">
+      <pre id="console" class="rounded-xl bg-black/60 border border-base-line p-4 overflow-auto text-xs leading-relaxed h-56"></pre>
+    </section>
   </div>
 
-  <!-- App + Realtime (Directus SDK) -->
+  <!-- App -->
   <script type="module">
-    /***** CONFIG: set your domains *****/
-    // For the SDK (no /api suffix)
-    const API_BASE = "https://test.mutahirmasood.com";
-    // For raw REST fetch calls (uses /api)
-    const REST_API = "https://test.mutahirmasood.com/api";
+    /***** CONFIG *****/
+    const API_BASE = "https://test.mutahirmasood.com";      // no /api
+    const REST_API = "https://test.mutahirmasood.com/api";  // with /api
 
-    /***** Import Directus SDK (module) *****/
-    import {
-      createDirectus,
-      rest,
-      realtime,
-      authentication
-    } from 'https://cdn.jsdelivr.net/npm/@directus/sdk@latest/dist/index.min.js';
+    /***** SDK *****/
+    import { createDirectus, authentication, rest, realtime } from "https://cdn.jsdelivr.net/npm/@directus/sdk@latest/dist/index.min.js";
 
-    // SDK client: cookie-session auth + REST + Realtime
     const client = createDirectus(API_BASE)
-      .with(authentication('cookie'))
+      .with(authentication("cookie"))
       .with(rest())
       .with(realtime());
 
-    /***** UI UTILITIES *****/
+    /***** DOM *****/
     const $ = (id) => document.getElementById(id);
-    function toast(msg) { $("toastMsg").textContent = msg; $("toast").classList.remove("hidden"); setTimeout(()=>$("toast").classList.add("hidden"), 2200); }
-    function show(o) { $("output").textContent = typeof o === "string" ? o : JSON.stringify(o, null, 2); }
-    function setAuthedUI(isAuthed, meEmail = "") {
-      if (isAuthed) {
-        $("status").textContent = meEmail ? `Signed in — ${meEmail}` : "Signed in";
-        $("loginForm").classList.add("hidden");
-        $("actions").classList.remove("hidden");
-        $("logout").classList.remove("hidden");
-        $("hint").classList.remove("hidden");
-      } else {
-        $("status").textContent = "Please log in.";
-        $("loginForm").classList.remove("hidden");
-        $("actions").classList.add("hidden");
-        $("logout").classList.add("hidden");
-        $("hint").classList.add("hidden");
-        clearCountdown(); // stop and clear 24h counter on logout
-      }
+    const consoleEl = $("console");
+    const statusEl = $("status");
+    const meEmailEl = $("meEmail");
+    const connPill = $("connPill");
+    const connStateEl = $("connState");
+    const thead = $("thead");
+    const tbody = $("tbody");
+    const empty = $("empty");
+
+    const counters = { create: 0, update: 0, delete: 0 };
+    const evtCreate = $("evtCreate");
+    const evtUpdate = $("evtUpdate");
+    const evtDelete = $("evtDelete");
+
+    /***** UTIL *****/
+    function log(line) {
+      const ts = new Date().toLocaleTimeString();
+      consoleEl.textContent = `[${ts}] ${line}\n` + consoleEl.textContent;
+    }
+    function setStatus(text) {
+      statusEl.textContent = "Status: " + text;
+    }
+    function setConn(state, tone="neutral") {
+      connStateEl.textContent = state;
+      connPill.className = "pill rounded-full border px-3 py-1.5 text-sm " + (
+        tone === "good" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200" :
+        tone === "warn" ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-200" :
+        tone === "bad"  ? "border-red-500/40 bg-red-500/10 text-red-200" :
+                          "border-base-line text-base-sub"
+      );
+    }
+    function bumpCounter(kind) {
+      counters[kind]++; evtCreate.textContent = counters.create; evtUpdate.textContent = counters.update; evtDelete.textContent = counters.delete;
     }
 
-    /***** ONE-DAY LOGIN COUNTDOWN *****/
-    const COUNTDOWN_KEY = "one_day_countdown_end"; // epoch ms
-    let expiryAtMs = null;
-    let tickHandle = null;
+    // Data model
+    /** Map of id -> item, used for targeted updates */
+    const index = new Map();
+    /** Current column order */
+    let columns = [];
 
-    function setSessionExpiryMs(msOrNull) {
-      expiryAtMs = msOrNull;
-      if (!msOrNull) {
-        $("sessionTime").textContent = "—";
-        $("sessionPill").className = "tick rounded-full border px-3 py-1.5 text-sm border-base-line text-base-sub";
-        if (tickHandle) { clearInterval(tickHandle); tickHandle = null; }
+    function deriveColumnsFrom(items) {
+      const set = new Set(columns);
+      for (const it of items) Object.keys(it || {}).forEach(k => set.add(k));
+      // Prefer putting id first if present; keep stable order
+      const next = Array.from(set);
+      next.sort((a,b) => (a === "id" ? -1 : b === "id" ? 1 : a.localeCompare(b)));
+      columns = next;
+    }
+
+    function renderHeader() {
+      if (!columns.length) { thead.innerHTML = ""; return; }
+      thead.innerHTML = `
+        <tr>
+          ${columns.map(c => `<th class="py-2 pr-6 font-medium">${escapeHtml(c)}</th>`).join("")}
+        </tr>`;
+    }
+
+    function renderBody() {
+      if (index.size === 0) {
+        tbody.innerHTML = "";
+        empty.classList.remove("hidden");
         return;
       }
-      if (tickHandle) clearInterval(tickHandle);
-      tickHandle = setInterval(updateCountdown, 1000);
-      updateCountdown();
+      empty.classList.add("hidden");
+      // Stable order by id if present, else insertion
+      const rows = Array.from(index.values()).sort((a,b) => {
+        if (a?.id != null && b?.id != null) return (a.id + "").localeCompare(b.id + "");
+        return 0;
+      });
+      tbody.innerHTML = rows.map(rowHtml).join("");
     }
 
-    function fmtHMS(totalSeconds) {
-      const h = Math.floor(totalSeconds / 3600);
-      const m = Math.floor((totalSeconds % 3600) / 60);
-      const s = totalSeconds % 60;
-      return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+    function rowHtml(item) {
+      return `<tr data-id="${escapeAttr(item?.id)}">
+        ${columns.map(c => `<td class="py-2 pr-6 align-top">${formatCell(item?.[c])}</td>`).join("")}
+      </tr>`;
     }
 
-    function updateCountdown() {
-      if (!expiryAtMs) return;
-      const now = Date.now();
-      const diff = Math.max(0, Math.floor((expiryAtMs - now) / 1000));
+    function upsertItem(item) {
+      // Merge & store
+      const prev = index.get(item.id) || {};
+      const merged = { ...prev, ...item };
+      index.set(merged.id, merged);
 
-      $("sessionTime").textContent = fmtHMS(diff);
+      // If new fields appeared, rebuild columns + rerender all for simplicity
+      const beforeCols = columns.slice();
+      deriveColumnsFrom([merged]);
+      if (columns.length !== beforeCols.length || columns.some((c,i)=>c!==beforeCols[i])) {
+        renderHeader(); renderBody(); return;
+      }
 
-      const pill = $("sessionPill");
-      pill.className = "tick rounded-full border px-3 py-1.5 text-sm";
-      if (diff <= 5 * 60) {
-        pill.classList.add("border-base-line","bg-red-500/10","text-base-text"); // <= 5m
-      } else if (diff <= 60 * 60) {
-        pill.classList.add("border-base-line","bg-base-warn/10","text-base-text"); // <= 1h
+      // Try targeted replace
+      const tr = tbody.querySelector(`tr[data-id="${cssEscape(merged.id)}"]`);
+      if (tr) {
+        tr.outerHTML = rowHtml(merged);
       } else {
-        pill.classList.add("border-base-line","text-base-sub");
-      }
-
-      if (diff === 0) {
-        clearCountdown();
-        toast("24-hour timer ended");
+        // Append in correct position by re-rendering (keeps it simple and correct)
+        renderBody();
       }
     }
 
-    function startOneDayCountdown() {
-      const end = Date.now() + 24 * 60 * 60 * 1000;
-      localStorage.setItem(COUNTDOWN_KEY, String(end));
-      setSessionExpiryMs(end);
+    function deleteItem(id) {
+      index.delete(id);
+      const tr = tbody.querySelector(`tr[data-id="${cssEscape(id)}"]`);
+      if (tr) tr.remove();
+      if (index.size === 0) { renderBody(); }
     }
 
-    function restoreCountdownIfPresent() {
-      const raw = localStorage.getItem(COUNTDOWN_KEY);
-      if (!raw) return;
-      const end = Number(raw);
-      if (!Number.isFinite(end) || end <= Date.now()) {
-        localStorage.removeItem(COUNTDOWN_KEY);
-        return;
-      }
-      setSessionExpiryMs(end);
+    function clearAll() {
+      index.clear(); renderBody();
     }
 
-    function clearCountdown() {
-      localStorage.removeItem(COUNTDOWN_KEY);
-      setSessionExpiryMs(null);
+    function formatCell(v) {
+      if (v == null) return `<span class="text-base-sub">—</span>`;
+      if (typeof v === "object") return `<code class="text-xs break-all">${escapeHtml(JSON.stringify(v))}</code>`;
+      return `<span>${escapeHtml(String(v))}</span>`;
     }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    }
+    function escapeAttr(s) { return escapeHtml(s); }
+    function cssEscape(s) { return String(s).replace(/"/g, '\\"'); }
 
     /***** AUTH HELPERS (REST) *****/
     async function refreshSession() {
@@ -246,8 +254,6 @@
       });
       return r.ok;
     }
-
-    // Generic fetch with one-time auto refresh on 401
     async function apiFetch(path, init = {}, { retryOn401 = true } = {}) {
       let res = await fetch(`${REST_API}${path}`, { credentials: "include", ...init });
       if (res.status === 401 && retryOn401) {
@@ -256,138 +262,176 @@
       }
       return res;
     }
-
     async function fetchMe() {
       const r = await apiFetch("/users/me", { method: "GET" }, { retryOn401: false });
       return r.ok ? r.json() : null;
     }
 
-    /***** REALTIME (SDK) *****/
-    let realtimeConnected = false;
-    async function startRealtime() {
-      if (realtimeConnected) return;
-      await client.realtime.connect();       // uses session cookies
-      realtimeConnected = true;
+    /***** REALTIME *****/
+    let unsub = null;
+    let paused = false;
 
-      // Subscribe to collection "test"; adjust to your collection(s)
-      const unsubscribe = await client.realtime.subscribe(
-        'items.test',
-        { event: true },                      // get create/update/delete
-        (payload) => {
-          const out = $("output");
-          const msg = `[${new Date().toLocaleTimeString()}] ${payload.event.toUpperCase()} → ${JSON.stringify(payload.data)}`;
-          out.textContent = `${msg}\n` + out.textContent;
+    async function connectRealtime() {
+      setConn("connecting…", "warn");
+      await client.realtime.connect();
+      setConn("connected", "good");
+      log("Realtime connected");
+
+      unsub = await client.realtime.subscribe("items.test", { event: true }, (payload) => {
+        if (paused) return;
+        const { event, data, keys } = payload; // keys has primary key(s) when available
+        const id = (data && data.id) || (keys && keys.id);
+        if (event === "create") {
+          bumpCounter("create");
+          upsertItem(data);
+          log(`CREATE id=${id}`);
+        } else if (event === "update") {
+          bumpCounter("update");
+          upsertItem(data);
+          log(`UPDATE id=${id}`);
+        } else if (event === "delete") {
+          bumpCounter("delete");
+          deleteItem(id);
+          log(`DELETE id=${id}`);
         }
-      );
-
-      // Expose if you ever want to stop listening:
-      window.unsubscribeTest = unsubscribe;
+      });
     }
-    // expose for manual calls if needed
-    window.startRealtime = startRealtime;
 
-    /***** INIT: refresh → me → UI + restore timer → realtime *****/
-    (async () => {
+    async function disconnectRealtime() {
+      if (unsub) { try { await unsub(); } catch(_) {} finally { unsub = null; }
+      }
+      try { await client.realtime.disconnect(); } catch(_) {}
+      setConn("disconnected", "bad");
+      log("Realtime disconnected");
+    }
+
+    /***** DATA LOAD *****/
+    async function loadInitial() {
+      setStatus("Loading initial data…");
+      const res = await apiFetch("/items/test?limit=-1");
+      if (!res.ok) {
+        const t = await res.text();
+        setStatus(`Initial load failed: ${res.status}`);
+        log(t);
+        return;
+      }
+      const json = await res.json();
+      const items = Array.isArray(json?.data) ? json.data : [];
+      clearAll();
+      deriveColumnsFrom(items);
+      renderHeader();
+      for (const it of items) index.set(it.id, it);
+      renderBody();
+      setStatus(`Loaded ${items.length} item(s). Listening for changes…`);
+    }
+
+    /***** INIT *****/
+    async function bootstrap() {
       try {
         await refreshSession();
         const me = await fetchMe();
         if (me?.data) {
-          setAuthedUI(true, me.data.email || "");
-          restoreCountdownIfPresent();
-          await startRealtime();
+          meEmailEl.textContent = me.data.email || "—";
+          $("authRow").classList.add("hidden");
+          $("logoutBtn").classList.remove("hidden");
+          setStatus("Signed in.");
+          await loadInitial();
+          await connectRealtime();
         } else {
-          setAuthedUI(false);
+          meEmailEl.textContent = "—";
+          $("authRow").classList.remove("hidden");
+          $("logoutBtn").classList.add("hidden");
+          setStatus("Please log in.");
+          setConn("idle");
         }
       } catch (e) {
-        setAuthedUI(false);
-        show(String(e));
+        setStatus("Init error");
+        log(String(e?.message || e));
       }
-    })();
+    }
+
+    await bootstrap();
 
     /***** EVENTS *****/
-    // Login
-    $("loginForm").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      $("loginBtn").disabled = true;
-      show("Logging in…");
-
+    $("loginBtn").addEventListener("click", async () => {
       const email = $("email").value.trim();
       const password = $("password").value;
+      if (!email || !password) return;
 
-      const res = await fetch(`${REST_API}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ email, password, mode: "session" })
-      });
-
-      $("loginBtn").disabled = false;
-
-      if (!res.ok) {
-        const err = await res.text();
-        show(`Login failed: ${res.status}\n${err}`);
-        return;
-      }
-
-      const meRes = await apiFetch("/users/me");
-      if (meRes.ok) {
-        const me = await meRes.json();
-        setAuthedUI(true, me?.data?.email || "");
-        show("Login successful.");
-        startOneDayCountdown();        // start fresh 24h counter
-        await startRealtime();         // connect + subscribe
-      } else {
-        setAuthedUI(false);
-        show(`Login returned but /users/me failed: ${meRes.status}`);
+      $("loginBtn").disabled = true;
+      setStatus("Logging in…");
+      try {
+        const res = await fetch(`${REST_API}/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ email, password, mode: "session" })
+        });
+        if (!res.ok) {
+          setStatus(`Login failed: ${res.status}`);
+          log(await res.text());
+          return;
+        }
+        const me = await fetchMe();
+        meEmailEl.textContent = me?.data?.email || "—";
+        $("authRow").classList.add("hidden");
+        $("logoutBtn").classList.remove("hidden");
+        setStatus("Signed in.");
+        await loadInitial();
+        await connectRealtime();
+      } finally {
+        $("loginBtn").disabled = false;
       }
     });
 
-    // Manual refresh (does not affect the 24h counter)
     $("refreshBtn").addEventListener("click", async () => {
-      show("Refreshing session…");
+      setStatus("Refreshing session…");
       const ok = await refreshSession();
       if (ok) {
         const me = await fetchMe();
-        if (me?.data) setAuthedUI(true, me.data.email || "");
-        show("Session refreshed.");
+        meEmailEl.textContent = me?.data?.email || "—";
+        setStatus("Session refreshed.");
       } else {
-        show("No active session to refresh.");
+        setStatus("No active session.");
       }
     });
 
-    // Who am I
-    $("whoami").addEventListener("click", async () => {
-      const res = await apiFetch("/users/me");
-      if (!res.ok) return show(`WhoAmI failed: ${res.status}\n${await res.text()}`);
-      show(await res.json());
-    });
-
-    // Load collection "test"
-    $("loadData").addEventListener("click", async () => {
-      show("Loading collection…");
-      const res = await apiFetch("/items/test");
-      if (!res.ok) return show(`Fetch failed: ${res.status}\n${await res.text()}`);
-      show(await res.json());
-    });
-
-    // Clear output
-    $("clearOut").addEventListener("click", () => show(""));
-
-    // Logout
-    $("logout").addEventListener("click", async () => {
-      const res = await fetch(`${REST_API}/auth/logout`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ mode: "session" })
-      });
-      if (res.ok) {
-        setAuthedUI(false);
-        show("Logged out.");
-      } else {
-        show(`Logout failed: ${res.status}\n${await res.text()}`);
+    $("logoutBtn").addEventListener("click", async () => {
+      setStatus("Logging out…");
+      try {
+        const r = await fetch(`${REST_API}/auth/logout`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ mode: "session" })
+        });
+        if (!r.ok) log(await r.text());
+      } finally {
+        await disconnectRealtime();
+        meEmailEl.textContent = "—";
+        $("authRow").classList.remove("hidden");
+        $("logoutBtn").classList.add("hidden");
+        clearAll();
+        renderHeader();
+        setStatus("Logged out.");
       }
     });
+
+    $("reloadBtn").addEventListener("click", async () => {
+      await loadInitial();
+    });
+
+    $("pauseBtn").addEventListener("click", async (e) => {
+      paused = !paused;
+      e.currentTarget.textContent = paused ? "Resume Stream" : "Pause Stream";
+      setStatus(paused ? "Stream paused (updates buffered by server, not applied here)" : "Listening for changes…");
+    });
+
+    $("clearBtn").addEventListener("click", () => {
+      clearAll();
+      setStatus("Cleared table (still subscribed).");
+    });
+
   </script>
 </body>
 </html>
