@@ -1,154 +1,177 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Directus Portal Demo — Realtime + 24h Timer</title>
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-  <!-- Tailwind CDN (demo-friendly). For prod, build Tailwind with CLI/PostCSS. -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: { sans: ['ui-sans-serif','system-ui','Inter','Segoe UI','Roboto','Arial'] },
-          colors: {
-            base: {
-              bg: '#0B0F17',
-              card: '#111827',
-              line: '#1F2937',
-              text: '#E5E7EB',
-              sub: '#9CA3AF',
-              brand: '#60A5FA',
-              brand2: '#34D399',
-              warn: '#FBBF24',
-              danger: '#F87171'
-            }
-          },
-          boxShadow: {
-            soft: '0 6px 30px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.03)'
-          }
-        }
-      }
-    }
-  </script>
+  <title>Directus Realtime — Cookie Auth + Raw WS</title>
   <style>
-    .glass { background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); backdrop-filter: blur(10px) saturate(120%); }
-    .btn:disabled { opacity:.5; cursor:not-allowed; }
-    .tick { transition: color .2s ease, background-color .2s ease, border-color .2s ease; }
+    :root { color-scheme: dark light; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin: 2rem auto; max-width: 760px; line-height: 1.5; }
+    h1 { font-size: 1.25rem; margin: 0 0 1rem; }
+    form { margin: 1rem 0; padding: 1rem; border: 1px solid #ccc; border-radius: 10px; }
+    label { display:block; font-size: .9rem; margin: .25rem 0; }
+    input[type="email"], input[type="password"], input[type="text"] { width: 100%; padding: .55rem .6rem; box-sizing: border-box; }
+    input[type="submit"], button { padding: .55rem .85rem; cursor: pointer; }
+    ol { padding-left: 1.2rem; }
+    li { margin: .35rem 0; }
+    .muted { opacity: .7; }
+    .row { display: grid; grid-template-columns: 1fr auto; gap: .75rem; align-items: end; }
+    code { background: rgba(125,125,125,.12); padding: .15rem .35rem; border-radius: 6px; }
+    .ok { color: #16a34a; } .bad { color: #e11d48; }
   </style>
 </head>
+<body>
+  <h1>Directus Realtime — Cookie Auth + Raw WebSocket</h1>
 
-<body class="min-h-screen bg-base-bg text-base-text">
-  <div class="max-w-3xl mx-auto px-4 py-10">
-    <!-- Header -->
-    <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-      <h1 class="text-2xl md:text-3xl font-semibold tracking-tight">Directus Portal</h1>
+  <!-- 1) Cookie-mode login via REST -->
+  <form id="login">
+    <strong>Sign in (session cookie)</strong>
+    <label for="email">Email</label>
+    <input type="email" id="email" autocomplete="username" required />
 
-      <!-- Session indicator -->
-      <div class="flex items-center gap-3">
-        <div id="sessionPill" class="tick rounded-full border px-3 py-1.5 text-sm border-base-line text-base-sub">
-          <span class="opacity-70">Session:</span> <span id="sessionTime">—</span>
-        </div>
-        <button id="logout" class="btn hidden rounded-xl px-4 py-2 bg-base-line/50 hover:bg-base-line text-base-sub hover:text-base-text transition">
-          Logout
-        </button>
-      </div>
-    </header>
+    <label for="password">Password</label>
+    <input type="password" id="password" autocomplete="current-password" required />
 
-    <!-- Card -->
-    <section class="mt-8 glass rounded-2xl shadow-soft border border-base-line">
-      <div class="p-6 md:p-8">
-        <!-- Status -->
-        <div id="status" class="text-sm text-base-sub mb-4">Initializing…</div>
+    <input type="submit" value="Login (REST) & Connect (WS)" />
+    <div class="muted">REST: <code>POST /api/auth/login</code> with <code>mode:"session"</code>. WebSocket: <code id="ws-url"></code></div>
+    <div id="status" class="muted"></div>
+  </form>
 
-        <!-- Login Form -->
-        <form id="loginForm" class="space-y-4">
-          <div class="flex items-center gap-3 text-base-sub">
-            <div class="w-10 h-10 rounded-xl bg-base-line/50 flex items-center justify-center">
-              <!-- lock icon -->
-              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none">
-                <path d="M7 10V8a5 5 0 1 1 10 0v2" stroke="currentColor" stroke-width="1.5"/>
-                <rect x="4" y="10" width="16" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/>
-                <circle cx="12" cy="15" r="1.5" fill="currentColor"/>
-              </svg>
-            </div>
-            <div>
-              <h2 class="text-lg font-medium text-base-text">Sign in</h2>
-              <p class="text-xs">Session cookie mode — secure, no tokens in localStorage.</p>
-            </div>
-          </div>
+  <!-- 2) Feed -->
+  <ol id="feed" aria-live="polite"></ol>
 
-          <div class="grid md:grid-cols-2 gap-3">
-            <input id="email" type="email" autocomplete="username" placeholder="Email"
-                   class="w-full rounded-xl bg-base-card/60 border border-base-line px-4 py-3 focus:outline-none focus:ring-2 focus:ring-base-brand/60" required />
-            <input id="password" type="password" autocomplete="current-password" placeholder="Password"
-                   class="w-full rounded-xl bg-base-card/60 border border-base-line px-4 py-3 focus:outline-none focus:ring-2 focus:ring-base-brand/60" required />
-          </div>
-
-          <div class="flex items-center gap-3">
-            <button id="loginBtn" type="submit"
-                    class="btn rounded-xl bg-base-brand hover:bg-blue-400 text-black font-medium px-5 py-3 transition">
-              Login
-            </button>
-            <button id="refreshBtn" type="button"
-                    class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-3 text-base-sub hover:text-base-text transition">
-              Refresh Session
-            </button>
-            <span id="hint" class="text-xs text-base-sub hidden">Logged in — try loading data.</span>
-          </div>
-        </form>
-
-        <!-- Actions (authed) -->
-        <div id="actions" class="hidden mt-2">
-          <div class="flex flex-wrap gap-3">
-            <button id="whoami" class="btn rounded-xl bg-base-brand/20 hover:bg-base-brand/30 text-base-text px-4 py-2 transition">Who am I?</button>
-            <button id="loadData" class="btn rounded-xl bg-base-brand2/20 hover:bg-base-brand2/30 text-base-text px-4 py-2 transition">Load “test” Collection</button>
-            <button id="clearOut" class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-2 text-base-sub hover:text-base-text transition">Clear</button>
-          </div>
-        </div>
-
-        <!-- Output -->
-        <div class="mt-6 space-y-4">
-          <!-- Live list -->
-          <ul id="testList" class="divide-y divide-base-line rounded-xl overflow-hidden border border-base-line"></ul>
-
-          <pre id="output" class="rounded-xl bg-black/60 border border-base-line p-4 overflow-auto text-sm leading-relaxed"></pre>
-        </div>
-      </div>
-    </section>
-
-    <!-- Toast -->
-    <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 hidden">
-      <div class="rounded-xl bg-white/10 text-base-text px-4 py-2 border border-base-line shadow-soft">
-        <span id="toastMsg" class="text-sm"></span>
-      </div>
+  <!-- 3) Send new item using the message shape from your screenshots -->
+  <form id="new">
+    <strong>Create in <code>test</code> via WS</strong>
+    <label for="text">Message</label>
+    <div class="row">
+      <input type="text" id="text" placeholder="Type something…" />
+      <input type="submit" value="Send" />
     </div>
-  </div>
+    <div class="muted">Payload → { type: 'items', collection: 'test', action: 'create', data: { text } }</div>
+  </form>
 
-  <!-- App + Realtime (Directus SDK) -->
-  <script type="module">
-    /***** CONFIG: set your domains *****/
-    // For the SDK (point directly to /api, so WS becomes /api/websocket)
-    const API_BASE = "https://test.mutahirmasood.com/api";
-    // For raw REST fetch calls (uses /api)
-    const REST_API = "https://test.mutahirmasood.com/api";
+  <script>
+    // ==== CONFIG ====
+    const HOST = "test.mutahirmasood.com";
+    const REST_BASE = `https://${HOST}/api`;
+    const WS_PATH = "websockets";
+    const scheme = (location.protocol === "https:") ? "wss" : "ws";
+    const WS_URL = `${scheme}://${HOST}/${WS_PATH}`;
+    document.getElementById("ws-url").textContent = WS_URL;
 
-    /***** Import Directus SDK (module) *****/
-    import {
-      createDirectus,
-      rest,
-      realtime,
-      authentication
-    } from 'https://unpkg.com/@directus/sdk@latest/dist/index.js';
+    // ==== STATE ====
+    let socket = null;
 
-    // SDK client: cookie-session auth + REST + Realtime
-    const client = createDirectus(API_BASE)
-      .with(authentication('cookie'))
-      .with(rest())
-      .with(realtime());
+    // ==== HELPERS ====
+    const $ = (sel) => document.querySelector(sel);
+    function setStatus(msg, good=null) {
+      const el = $("#status"); el.textContent = msg || "";
+      el.className = good === null ? "muted" : (good ? "ok" : "bad");
+    }
 
-    // ... rest of script stays identical to previous canvas version ...
+    function addMessageToList(message) {
+      const li = document.createElement("li");
+      if (message?.id) li.setAttribute("id", message.id);
+      const who = message?.user_created?.first_name || "Unknown";
+      const text = message?.text ?? JSON.stringify(message);
+      li.textContent = `${who}: ${text}`;
+      document.querySelector("ol").appendChild(li);
+    }
+
+    function subscribe() {
+      if (!socket || socket.readyState !== 1) return;
+      // Directus WS subscribe
+      socket.send(JSON.stringify({
+        type: "subscribe",
+        collection: "test",
+        query: {
+          fields: ["*", "user_created.first_name"],
+          sort: "date_created"
+        }
+      }));
+    }
+
+    function handleWSMessage(evt) {
+      let data;
+      try { data = JSON.parse(evt.data); } catch { return; }
+
+      // Historical on init
+      if (data.type === "subscription" && data.event === "init") {
+        for (const message of data.data) addMessageToList(message);
+        return;
+      }
+
+      // New create
+      if (data.type === "subscription" && data.event === "create") {
+        // Some gateways send a single item, others wrap in array
+        const item = Array.isArray(data.data) ? data.data[0] : data.data;
+        addMessageToList(item);
+        return;
+      }
+
+      // Optional: updates
+      if (data.type === "subscription" && data.event === "update") {
+        const item = Array.isArray(data.data) ? data.data[0] : data.data;
+        addMessageToList(item);
+      }
+    }
+
+    // ==== AUTH + CONNECT ====
+    $("#login").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      setStatus("Logging in…");
+
+      const email = $("#email").value.trim();
+      const password = $("#password").value;
+
+      const res = await fetch(`${REST_BASE}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email, password, mode: "session" })
+      });
+
+      if (!res.ok) {
+        const t = await res.text();
+        setStatus(`Login failed: ${res.status} ${t}`, false);
+        return;
+      }
+
+      setStatus("Logged in. Opening WebSocket…", true);
+
+      socket = new WebSocket(WS_URL);
+      socket.addEventListener("open", () => {
+        setStatus("WebSocket open. Subscribing…", true);
+        subscribe();
+      });
+      socket.addEventListener("message", handleWSMessage);
+      socket.addEventListener("close", () => setStatus("WebSocket closed."));
+      socket.addEventListener("error", () => setStatus("WebSocket error.", false));
+    });
+
+    // ==== CREATE VIA WS (per your screenshot shape) ====
+    $("#new").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const text = $("#text").value.trim();
+      if (!text) return;
+      if (!socket || socket.readyState !== 1) {
+        alert("Connect first (login above).");
+        return;
+      }
+      const payload = {
+        type: "items",
+        collection: "test",
+        action: "create",
+        data: { text }
+      };
+      try {
+        socket.send(JSON.stringify(payload));
+        $("#text").value = "";
+      } catch (err) {
+        console.error("send failed", err);
+      }
+    });
   </script>
 </body>
 </html>
