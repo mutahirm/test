@@ -1,11 +1,11 @@
-<!DOCTYPE html>
+<!DOCTYPE html> 
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Directus Portal — Realtime + 24h Timer</title>
+  <title>Directus Portal Demo — Session Timer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Tailwind CDN (demo-friendly) -->
+  <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -38,7 +38,6 @@
     .tick { transition: color .2s ease, background-color .2s ease, border-color .2s ease; }
   </style>
 </head>
-
 <body class="min-h-screen bg-base-bg text-base-text">
   <div class="max-w-3xl mx-auto px-4 py-10">
     <!-- Header -->
@@ -95,7 +94,7 @@
                     class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-3 text-base-sub hover:text-base-text transition">
               Refresh Session
             </button>
-            <span id="hint" class="text-xs text-base-sub hidden">Logged in — live data enabled.</span>
+            <span id="hint" class="text-xs text-base-sub hidden">Logged in — try loading data.</span>
           </div>
         </form>
 
@@ -103,8 +102,8 @@
         <div id="actions" class="hidden mt-2">
           <div class="flex flex-wrap gap-3">
             <button id="whoami" class="btn rounded-xl bg-base-brand/20 hover:bg-base-brand/30 text-base-text px-4 py-2 transition">Who am I?</button>
-            <button id="loadData" class="btn rounded-xl bg-base-brand2/20 hover:bg-base-brand2/30 text-base-text px-4 py-2 transition">Reload Snapshot</button>
-            <button id="clearOut" class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-2 text-base-sub hover:text-base-text transition">Clear Output</button>
+            <button id="loadData" class="btn rounded-xl bg-base-brand2/20 hover:bg-base-brand2/30 text-base-text px-4 py-2 transition">Load “test” Collection</button>
+            <button id="clearOut" class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-2 text-base-sub hover:text-base-text transition">Clear</button>
           </div>
         </div>
 
@@ -123,29 +122,11 @@
     </div>
   </div>
 
-  <!-- App + Realtime (Directus SDK) -->
-  <script type="module">
-    /***** CONFIG: set your domains *****/
-    // SDK base (NO /api suffix)
-    const API_BASE = "https://test.mutahirmasood.com";
-    // REST base (WITH /api suffix)
-    const REST_API = "https://test.mutahirmasood.com/api";
+  <script>
+    // ======= CONFIG =======
+    const API = "https://test.mutahirmasood.com/api"; // same-origin Directus mount
 
-    /***** Import Directus SDK *****/
-    import {
-      createDirectus,
-      rest,
-      realtime,
-      authentication
-    } from 'https://cdn.jsdelivr.net/npm/@directus/sdk@latest/dist/index.min.js';
-
-    // SDK client: cookie-session auth + REST + Realtime
-    const client = createDirectus(API_BASE)
-      .with(authentication('cookie'))
-      .with(rest())
-      .with(realtime());
-
-    /***** UI UTILITIES *****/
+    // ======= UI UTILS =======
     const $ = (id) => document.getElementById(id);
     function toast(msg) { $("toastMsg").textContent = msg; $("toast").classList.remove("hidden"); setTimeout(()=>$("toast").classList.add("hidden"), 2200); }
     function show(o) { $("output").textContent = typeof o === "string" ? o : JSON.stringify(o, null, 2); }
@@ -163,15 +144,12 @@
         $("logout").classList.add("hidden");
         $("hint").classList.add("hidden");
         clearCountdown(); // stop and clear 24h counter on logout
-        stopRealtime();
-        rows = [];
-        render();
       }
     }
 
-    /***** 24-HOUR LOGIN COUNTDOWN *****/
+    // ======= ONE-DAY LOGIN COUNTDOWN =======
     const COUNTDOWN_KEY = "one_day_countdown_end"; // epoch ms
-    let expiryAtMs = null;
+    let expiryAtMs = null; // epoch ms
     let tickHandle = null;
 
     function setSessionExpiryMs(msOrNull) {
@@ -191,16 +169,20 @@
       const h = Math.floor(totalSeconds / 3600);
       const m = Math.floor((totalSeconds % 3600) / 60);
       const s = totalSeconds % 60;
-      return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+      const HH = String(h).padStart(2, "0");
+      const MM = String(m).padStart(2, "0");
+      const SS = String(s).padStart(2, "0");
+      return `${HH}:${MM}:${SS}`;
     }
 
     function updateCountdown() {
       if (!expiryAtMs) return;
       const now = Date.now();
-      const diff = Math.max(0, Math.floor((expiryAtMs - now) / 1000));
+      let diff = Math.max(0, Math.floor((expiryAtMs - now) / 1000)); // seconds
 
       $("sessionTime").textContent = fmtHMS(diff);
 
+      // Color states
       const pill = $("sessionPill");
       pill.className = "tick rounded-full border px-3 py-1.5 text-sm";
       if (diff <= 5 * 60) {
@@ -212,13 +194,13 @@
       }
 
       if (diff === 0) {
-        clearCountdown();
+        clearCountdown(); // auto-clear when done
         toast("24-hour timer ended");
       }
     }
 
     function startOneDayCountdown() {
-      const end = Date.now() + 24 * 60 * 60 * 1000;
+      const end = Date.now() + 24 * 60 * 60 * 1000; // 24h
       localStorage.setItem(COUNTDOWN_KEY, String(end));
       setSessionExpiryMs(end);
     }
@@ -227,10 +209,8 @@
       const raw = localStorage.getItem(COUNTDOWN_KEY);
       if (!raw) return;
       const end = Number(raw);
-      if (!Number.isFinite(end) || end <= Date.now()) {
-        localStorage.removeItem(COUNTDOWN_KEY);
-        return;
-      }
+      if (!Number.isFinite(end)) { localStorage.removeItem(COUNTDOWN_KEY); return; }
+      if (end <= Date.now()) { localStorage.removeItem(COUNTDOWN_KEY); return; }
       setSessionExpiryMs(end);
     }
 
@@ -239,9 +219,9 @@
       setSessionExpiryMs(null);
     }
 
-    /***** AUTH HELPERS (REST) *****/
+    // ======= AUTH HELPERS =======
     async function refreshSession() {
-      const r = await fetch(`${REST_API}/auth/refresh`, {
+      const r = await fetch(`${API}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -250,11 +230,14 @@
       return r.ok;
     }
 
+    // Generic fetch with one-time auto refresh on 401
     async function apiFetch(path, init = {}, { retryOn401 = true } = {}) {
-      let res = await fetch(`${REST_API}${path}`, { credentials: "include", ...init });
+      let res = await fetch(`${API}${path}`, { credentials: "include", ...init });
       if (res.status === 401 && retryOn401) {
         const ok = await refreshSession();
-        if (ok) res = await fetch(`${REST_API}${path}`, { credentials: "include", ...init });
+        if (ok) {
+          res = await fetch(`${API}${path}`, { credentials: "include", ...init });
+        }
       }
       return res;
     }
@@ -264,71 +247,14 @@
       return r.ok ? r.json() : null;
     }
 
-    /***** DATA STATE + RENDER *****/
-    let rows = []; // cache for items.test
-
-    function render() {
-      const out = $("output");
-      if (!rows.length) { out.textContent = "No records yet."; return; }
-      out.textContent = rows.map(r => `${r.id} — ${JSON.stringify(r)}`).join('\n');
-    }
-
-    async function loadInitial() {
-      // tweak fields/filter/sort/limit for your schema
-      const res = await apiFetch(`/items/test?fields=*&sort=-date_created&limit=50`);
-      if (!res.ok) {
-        $("output").textContent = `Initial load failed: ${res.status}\n` + (await res.text());
-        return;
-      }
-      rows = (await res.json())?.data ?? [];
-      render();
-    }
-
-    /***** REALTIME (SDK) *****/
-    let realtimeConnected = false;
-    let unsubscribeTest = null;
-
-    async function startRealtime() {
-      if (realtimeConnected) return;
-      await client.realtime.connect();   // uses cookie session
-      realtimeConnected = true;
-
-      unsubscribeTest = await client.realtime.subscribe(
-        'items.test',
-        { event: true },                 // create/update/delete
-        (payload) => {
-          const [item] = Array.isArray(payload.data) ? payload.data : [payload.data];
-
-          if (payload.event === 'create') {
-            rows.unshift(item);
-          } else if (payload.event === 'update') {
-            const i = rows.findIndex(r => r.id === item.id);
-            if (i !== -1) rows[i] = { ...rows[i], ...item };
-            else rows.unshift(item);
-          } else if (payload.event === 'delete') {
-            rows = rows.filter(r => r.id !== item.id);
-          }
-          render();
-        }
-      );
-    }
-
-    function stopRealtime() {
-      if (unsubscribeTest) unsubscribeTest();
-      unsubscribeTest = null;
-      realtimeConnected = false;
-    }
-
-    /***** INIT: refresh → me → UI → snapshot → realtime *****/
+    // ======= INIT: refresh → me → restore countdown (if any) =======
     (async () => {
       try {
-        await refreshSession();
+        await refreshSession();            // quietly renew if possible
         const me = await fetchMe();
         if (me?.data) {
           setAuthedUI(true, me.data.email || "");
-          restoreCountdownIfPresent();
-          await loadInitial();      // hydrate once
-          await startRealtime();    // then stream changes
+          restoreCountdownIfPresent();     // if user already had a running 24h counter
         } else {
           setAuthedUI(false);
         }
@@ -338,7 +264,7 @@
       }
     })();
 
-    /***** EVENTS *****/
+    // ======= EVENTS =======
     // Login
     $("loginForm").addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -348,7 +274,7 @@
       const email = $("email").value.trim();
       const password = $("password").value;
 
-      const res = await fetch(`${REST_API}/auth/login`, {
+      const res = await fetch(`${API}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -368,9 +294,7 @@
         const me = await meRes.json();
         setAuthedUI(true, me?.data?.email || "");
         show("Login successful.");
-        startOneDayCountdown();     // start fresh 24h counter
-        await loadInitial();        // hydrate
-        await startRealtime();      // stream
+        startOneDayCountdown(); // <-- Start the 24h counter on login
       } else {
         setAuthedUI(false);
         show(`Login returned but /users/me failed: ${meRes.status}`);
@@ -390,16 +314,18 @@
       }
     });
 
-    // Optional manual snapshot reload
-    $("loadData").addEventListener("click", async () => {
-      await loadInitial();
-      show("Snapshot reloaded.");
-    });
-
     // Who am I
     $("whoami").addEventListener("click", async () => {
       const res = await apiFetch("/users/me");
       if (!res.ok) return show(`WhoAmI failed: ${res.status}\n${await res.text()}`);
+      show(await res.json());
+    });
+
+    // Load collection "test"
+    $("loadData").addEventListener("click", async () => {
+      show("Loading collection…");
+      const res = await apiFetch("/items/test");
+      if (!res.ok) return show(`Fetch failed: ${res.status}\n${await res.text()}`);
       show(await res.json());
     });
 
@@ -408,7 +334,7 @@
 
     // Logout
     $("logout").addEventListener("click", async () => {
-      const res = await fetch(`${REST_API}/auth/logout`, {
+      const res = await fetch(`${API}/auth/logout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
