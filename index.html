@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Directus Portal Demo — Realtime + 24h Timer</title>
+  <title>Directus Portal — Realtime + 24h Timer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- Tailwind CDN (demo-friendly) -->
@@ -95,7 +95,7 @@
                     class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-3 text-base-sub hover:text-base-text transition">
               Refresh Session
             </button>
-            <span id="hint" class="text-xs text-base-sub hidden">Logged in — try loading data.</span>
+            <span id="hint" class="text-xs text-base-sub hidden">Logged in — live data enabled.</span>
           </div>
         </form>
 
@@ -103,8 +103,8 @@
         <div id="actions" class="hidden mt-2">
           <div class="flex flex-wrap gap-3">
             <button id="whoami" class="btn rounded-xl bg-base-brand/20 hover:bg-base-brand/30 text-base-text px-4 py-2 transition">Who am I?</button>
-            <button id="loadData" class="btn rounded-xl bg-base-brand2/20 hover:bg-base-brand2/30 text-base-text px-4 py-2 transition">Load “test” Collection</button>
-            <button id="clearOut" class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-2 text-base-sub hover:text-base-text transition">Clear</button>
+            <button id="loadData" class="btn rounded-xl bg-base-brand2/20 hover:bg-base-brand2/30 text-base-text px-4 py-2 transition">Reload Snapshot</button>
+            <button id="clearOut" class="btn rounded-xl bg-base-line/60 hover:bg-base-line px-4 py-2 text-base-sub hover:text-base-text transition">Clear Output</button>
           </div>
         </div>
 
@@ -126,12 +126,12 @@
   <!-- App + Realtime (Directus SDK) -->
   <script type="module">
     /***** CONFIG: set your domains *****/
-    // For the SDK (no /api suffix)
+    // SDK base (NO /api suffix)
     const API_BASE = "https://test.mutahirmasood.com";
-    // For raw REST fetch calls (uses /api)
+    // REST base (WITH /api suffix)
     const REST_API = "https://test.mutahirmasood.com/api";
 
-    /***** Import Directus SDK (module) *****/
+    /***** Import Directus SDK *****/
     import {
       createDirectus,
       rest,
@@ -163,10 +163,13 @@
         $("logout").classList.add("hidden");
         $("hint").classList.add("hidden");
         clearCountdown(); // stop and clear 24h counter on logout
+        stopRealtime();
+        rows = [];
+        render();
       }
     }
 
-    /***** ONE-DAY LOGIN COUNTDOWN *****/
+    /***** 24-HOUR LOGIN COUNTDOWN *****/
     const COUNTDOWN_KEY = "one_day_countdown_end"; // epoch ms
     let expiryAtMs = null;
     let tickHandle = null;
@@ -247,7 +250,6 @@
       return r.ok;
     }
 
-    // Generic fetch with one-time auto refresh on 401
     async function apiFetch(path, init = {}, { retryOn401 = true } = {}) {
       let res = await fetch(`${REST_API}${path}`, { credentials: "include", ...init });
       if (res.status === 401 && retryOn401) {
@@ -262,31 +264,62 @@
       return r.ok ? r.json() : null;
     }
 
+    /***** DATA STATE + RENDER *****/
+    let rows = []; // cache for items.test
+
+    function render() {
+      const out = $("output");
+      if (!rows.length) { out.textContent = "No records yet."; return; }
+      out.textContent = rows.map(r => `${r.id} — ${JSON.stringify(r)}`).join('\n');
+    }
+
+    async function loadInitial() {
+      // tweak fields/filter/sort/limit for your schema
+      const res = await apiFetch(`/items/test?fields=*&sort=-date_created&limit=50`);
+      if (!res.ok) {
+        $("output").textContent = `Initial load failed: ${res.status}\n` + (await res.text());
+        return;
+      }
+      rows = (await res.json())?.data ?? [];
+      render();
+    }
+
     /***** REALTIME (SDK) *****/
     let realtimeConnected = false;
+    let unsubscribeTest = null;
+
     async function startRealtime() {
       if (realtimeConnected) return;
-      await client.realtime.connect();       // uses session cookies
+      await client.realtime.connect();   // uses cookie session
       realtimeConnected = true;
 
-      // Subscribe to collection "test"; adjust to your collection(s)
-      const unsubscribe = await client.realtime.subscribe(
+      unsubscribeTest = await client.realtime.subscribe(
         'items.test',
-        { event: true },                      // get create/update/delete
+        { event: true },                 // create/update/delete
         (payload) => {
-          const out = $("output");
-          const msg = `[${new Date().toLocaleTimeString()}] ${payload.event.toUpperCase()} → ${JSON.stringify(payload.data)}`;
-          out.textContent = `${msg}\n` + out.textContent;
+          const [item] = Array.isArray(payload.data) ? payload.data : [payload.data];
+
+          if (payload.event === 'create') {
+            rows.unshift(item);
+          } else if (payload.event === 'update') {
+            const i = rows.findIndex(r => r.id === item.id);
+            if (i !== -1) rows[i] = { ...rows[i], ...item };
+            else rows.unshift(item);
+          } else if (payload.event === 'delete') {
+            rows = rows.filter(r => r.id !== item.id);
+          }
+          render();
         }
       );
-
-      // Expose if you ever want to stop listening:
-      window.unsubscribeTest = unsubscribe;
     }
-    // expose for manual calls if needed
-    window.startRealtime = startRealtime;
 
-    /***** INIT: refresh → me → UI + restore timer → realtime *****/
+    function stopRealtime() {
+      if (unsubscribeTest) unsubscribeTest();
+      unsubscribeTest = null;
+      realtimeConnected = false;
+    }
+
+    /***** INIT: refresh → me → UI → snapshot → realtime *****/
     (async () => {
       try {
         await refreshSession();
@@ -294,7 +327,8 @@
         if (me?.data) {
           setAuthedUI(true, me.data.email || "");
           restoreCountdownIfPresent();
-          await startRealtime();
+          await loadInitial();      // hydrate once
+          await startRealtime();    // then stream changes
         } else {
           setAuthedUI(false);
         }
@@ -334,8 +368,9 @@
         const me = await meRes.json();
         setAuthedUI(true, me?.data?.email || "");
         show("Login successful.");
-        startOneDayCountdown();        // start fresh 24h counter
-        await startRealtime();         // connect + subscribe
+        startOneDayCountdown();     // start fresh 24h counter
+        await loadInitial();        // hydrate
+        await startRealtime();      // stream
       } else {
         setAuthedUI(false);
         show(`Login returned but /users/me failed: ${meRes.status}`);
@@ -355,18 +390,16 @@
       }
     });
 
+    // Optional manual snapshot reload
+    $("loadData").addEventListener("click", async () => {
+      await loadInitial();
+      show("Snapshot reloaded.");
+    });
+
     // Who am I
     $("whoami").addEventListener("click", async () => {
       const res = await apiFetch("/users/me");
       if (!res.ok) return show(`WhoAmI failed: ${res.status}\n${await res.text()}`);
-      show(await res.json());
-    });
-
-    // Load collection "test"
-    $("loadData").addEventListener("click", async () => {
-      show("Loading collection…");
-      const res = await apiFetch("/items/test");
-      if (!res.ok) return show(`Fetch failed: ${res.status}\n${await res.text()}`);
       show(await res.json());
     });
 
